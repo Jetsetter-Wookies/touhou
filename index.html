@@ -301,8 +301,17 @@ let player, bullets, enemies, enemyBullets, particles, items, boss, laserCharges
 let bossActive=false, bossMaxHp=1000, bossHp=1000;
 
 const keys = {};
-document.addEventListener('keydown', e=>{ keys[e.code]=true;  e.preventDefault(); });
-document.addEventListener('keyup',   e=>{ keys[e.code]=false; });
+document.addEventListener('keydown', e=>{
+  // Don't intercept when typing in an input/select field
+  const tag = document.activeElement && document.activeElement.tagName;
+  if (tag === 'INPUT' || tag === 'SELECT' || tag === 'TEXTAREA') return;
+  keys[e.code]=true; e.preventDefault();
+});
+document.addEventListener('keyup', e=>{
+  const tag = document.activeElement && document.activeElement.tagName;
+  if (tag === 'INPUT' || tag === 'SELECT' || tag === 'TEXTAREA') return;
+  keys[e.code]=false;
+});
 
 // ═══════════════════════════════════════════════════════════════
 //  BOSS ROSTER  (maps stage → sprite key + display name)
