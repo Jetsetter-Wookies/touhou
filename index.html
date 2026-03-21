@@ -118,6 +118,7 @@
     <div style="font-size:14px;color:#cc88ff;margin-bottom:4px;">~ Phantasmal Dream Land ~</div>
     <div class="screen-sub">幻の夢の国へ</div>
     <button class="screen-btn" onclick="startGame()">▶ START GAME</button>
+    <button class="screen-btn" id="title-extra-btn" onclick="startExtraMode()" style="display:none;border-color:#ff88ff;color:#ff88ff;">✦ EXTRA MODE</button>
     <div class="controls-list">
       <span>Arrow Keys</span> — Move<br>
       <span>Z</span> — Shoot &nbsp;&nbsp; <span>X</span> — Bomb<br>
@@ -138,8 +139,10 @@
   <!-- Victory -->
   <div id="victory-screen" style="display:none">
     <div class="screen-title-jp">クリア！</div>
-    <div style="font-size:14px;color:#ffcc44;margin-bottom:20px;">ALL CLEAR</div>
-    <div id="victory-score" style="font-size:20px;color:#fff;margin-bottom:20px;"></div>
+    <div style="font-size:14px;color:#ffcc44;margin-bottom:6px;">ALL CLEAR</div>
+    <div id="victory-score" style="font-size:20px;color:#fff;margin-bottom:16px;"></div>
+    <div id="extra-unlock-msg" style="font-size:11px;color:#ff88ff;letter-spacing:2px;margin-bottom:14px;display:none;">✦ EXTRA STAGE UNLOCKED ✦</div>
+    <button class="screen-btn" id="extra-mode-btn" onclick="startExtraMode()" style="display:none;border-color:#ff88ff;color:#ff88ff;">✦ EXTRA MODE</button>
     <button class="screen-btn" onclick="startGame()">▶ PLAY AGAIN</button>
     <button class="screen-btn" onclick="showTitle()">TITLE</button>
   </div>
@@ -189,6 +192,7 @@ ctx.imageSmoothingEnabled = false;   // keep sprites crisp / pixel-art
 //  STATE
 // ═══════════════════════════════════════════════════════════════
 let state = 'loading';
+let extraMode = false;   // true after first clear
 let score=0, hiScore=100000, graze=0, power=1.0;
 let lives=3, bombs=3, frame=0, stage=1, paused=false;
 let invincible=0, bombActive=0, stageTimer=0;
@@ -308,6 +312,9 @@ function playerShoot() {
 
 function updateOrbs() {
   if (power < 2.5) return;
+  // Stage 2+ boss: disable homing orbs when boss is below 50% HP
+  const bossNerfActive = bossActive && stage >= 2 && boss && boss.hp < bossMaxHp * 0.5;
+  if (bossNerfActive && power >= 3.5) return;  // orbs suppressed
   orbs.forEach(orb => {
     orb.shootTimer++;
     const interval = power >= 3.5 ? 18 : 25;
@@ -483,7 +490,8 @@ function spawnEnemy(sprKey, x, y, vx, vy, pattern, hp, sc, extra={}) {
 function spawnBoss() {
   bossActive = true;
   const def = BOSS_ROSTER[(stage-1) % BOSS_ROSTER.length];
-  bossMaxHp = 800+stage*400; bossHp = bossMaxHp;
+  const baseHp = extraMode ? 6000 : 3000;
+  bossMaxHp = baseHp + stage*1200; bossHp = bossMaxHp;
   boss = { ...def, x:W/2-def.w/2, y:30, hp:bossHp,
            targetX:W/2, targetY:60, shootTimer:0,
            moveTimer:0, spiralAngle:0, ringOffset:0 };
@@ -544,6 +552,11 @@ function bossBehavior() {
       document.getElementById('victory-score').textContent='SCORE: '+score.toLocaleString();
       document.getElementById('victory-screen').style.display='flex';
       if (score>hiScore) hiScore=score;
+      // unlock extra mode after first clear
+      if (!extraMode) {
+        document.getElementById('extra-unlock-msg').style.display='block';
+        document.getElementById('extra-mode-btn').style.display='inline-block';
+      }
     } else {
       stage++; stageTimer=0;
       wavePhase=0; waveDelay=120; spawnQueue=[];
@@ -578,7 +591,13 @@ function updateEnemies() {
         if (e.hp<=0) {
           score+=e.score*stage;
           for(let p=0;p<10;p++) spawnParticle(e.x+e.w/2,e.y+e.h/2,'#44ffcc',4);
-          if (Math.random()<0.8) items.push({x:e.x+e.w/2,y:e.y+e.h/2,vy:1,type:'power'});
+          if (extraMode) {
+            const r = Math.random();
+            if (r < 0.3)       items.push({x:e.x+e.w/2,y:e.y+e.h/2,vy:1,type:'power'});
+            else if (r < 0.8)  items.push({x:e.x+e.w/2,y:e.y+e.h/2,vy:1,type:'point'});
+          } else {
+            if (Math.random()<0.8) items.push({x:e.x+e.w/2,y:e.y+e.h/2,vy:3,type:'power'});
+          }
           enemies.splice(i,1); killed=true; break;
         }
       }
@@ -709,6 +728,7 @@ function handleInput() {
 // ═══════════════════════════════════════════════════════════════
 //  DRAW
 // ═══════════════════════════════════════════════════════════════
+const STAR_SPEED_MULT = () => extraMode ? 1.0 : 0.5;
 const stars = Array.from({length:80},()=>({
   x:Math.random()*384, y:Math.random()*448,
   speed:0.3+Math.random()*1.2, r:Math.random()*1.5, b:Math.random()
@@ -718,11 +738,12 @@ function drawBG() {
   ctx.fillStyle='#060010'; ctx.fillRect(0,0,W,H);
   // lane lines
   ctx.strokeStyle='#1a0030'; ctx.lineWidth=0.5;
-  const ly=(frame*2)%H;
+  const scrollSpd = extraMode ? 2 : 1;
+  const ly=(frame*scrollSpd)%H;
   for(let y=ly-H;y<H;y+=40){ ctx.beginPath();ctx.moveTo(0,y);ctx.lineTo(W,y);ctx.stroke(); }
   // stars
   stars.forEach(s=>{
-    s.y+=s.speed; if(s.y>H){s.y=0;s.x=Math.random()*W;}
+    s.y+=s.speed*STAR_SPEED_MULT(); if(s.y>H){s.y=0;s.x=Math.random()*W;}
     ctx.fillStyle=`rgba(200,170,255,${0.4+s.b*0.6})`;
     ctx.beginPath(); ctx.arc(s.x,s.y,s.r,0,Math.PI*2); ctx.fill();
   });
@@ -961,7 +982,7 @@ let lastUIFrame=0;
 function updateUI() {
   document.getElementById('scoreDisplay').textContent=score.toLocaleString();
   document.getElementById('hiScoreDisplay').textContent=hiScore.toLocaleString();
-  document.getElementById('stageDisplay').textContent=stage;
+  document.getElementById('stageDisplay').textContent=(extraMode?"✦":"")+stage;
   document.getElementById('powerDisplay').textContent=power.toFixed(1);
   document.getElementById('grazeDisplay').textContent=graze;
   // lives
@@ -1028,7 +1049,19 @@ function loop() {
 // ═══════════════════════════════════════════════════════════════
 //  SCREEN TRANSITIONS
 // ═══════════════════════════════════════════════════════════════
+function startExtraMode() {
+  extraMode = true;
+  document.getElementById('victory-screen').style.display='none';
+  document.getElementById('extra-unlock-msg').style.display='none';
+  document.getElementById('extra-mode-btn').style.display='none';
+  document.getElementById('boss-section').style.display='none';
+  initGame();
+  showStageBanner('✦ EXTRA MODE ✦');
+  state='playing';
+}
+
 function startGame() {
+  extraMode = false;
   document.getElementById('title-screen').style.display='none';
   document.getElementById('gameover-screen').style.display='none';
   document.getElementById('victory-screen').style.display='none';
@@ -1040,6 +1073,8 @@ function showTitle() {
   document.getElementById('gameover-screen').style.display='none';
   document.getElementById('victory-screen').style.display='none';
   document.getElementById('title-screen').style.display='flex';
+  const eb = document.getElementById('title-extra-btn');
+  if (eb) eb.style.display = extraMode || document.getElementById('extra-mode-btn').style.display==='inline-block' ? 'inline-block' : 'none';
   state='title';
 }
 
