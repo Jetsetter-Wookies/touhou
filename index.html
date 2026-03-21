@@ -124,6 +124,17 @@
     <button class="screen-btn" onclick="startBabyMode()" style="border-color:#44ff88;color:#44ff88;">✿ BABY MODE</button>
     <button class="screen-btn" onclick="openMusicRoom()" style="border-color:#44ccff;color:#44ccff;">♪ MUSIC ROOM</button>
     <button class="screen-btn" id="title-extra-btn" onclick="startTrueMode()" style="display:none;border-color:#ff88ff;color:#ff88ff;">★ TRUE MODE</button>
+    <div id="title-hiscore-box" style="font-size:11px;color:#7755aa;margin-top:6px;text-align:center;line-height:1.8;"></div>
+    <div style="margin-top:10px;display:flex;align-items:center;gap:6px;justify-content:center;">
+      <input id="pw-input" maxlength="10" placeholder="ENTER CODE"
+        style="background:#0a0018;border:1px solid #553377;color:#e0c0ff;font-family:monospace;
+               font-size:13px;letter-spacing:3px;padding:5px 8px;width:130px;text-transform:uppercase;
+               outline:none;text-align:center;"
+        oninput="this.value=this.value.toUpperCase()"
+        onkeydown="if(event.key==='Enter') submitPassword()"/>
+      <button class="screen-btn" onclick="submitPassword()" style="font-size:11px;padding:5px 10px;">GO</button>
+    </div>
+    <div id="pw-feedback" style="font-size:10px;color:#ff6644;margin-top:4px;min-height:14px;text-align:center;"></div>
     <div class="controls-list">
       <span>Arrow Keys</span> — Move<br>
       <span>Z</span> — Shoot &nbsp;&nbsp; <span>X</span> — Bomb<br>
@@ -146,6 +157,8 @@
     <div class="screen-title-jp">クリア！</div>
     <div style="font-size:14px;color:#ffcc44;margin-bottom:6px;">ALL CLEAR</div>
     <div id="victory-score" style="font-size:20px;color:#fff;margin-bottom:16px;"></div>
+    <div id="victory-hiscore" style="font-size:11px;color:#aaaacc;margin-bottom:8px;text-align:center;"></div>
+    <div id="victory-password" style="font-size:11px;color:#44ffcc;letter-spacing:2px;margin-bottom:10px;text-align:center;min-height:16px;"></div>
     <div id="extra-unlock-msg" style="font-size:11px;color:#ff88ff;letter-spacing:2px;margin-bottom:14px;display:none;">★ TRUE MODE UNLOCKED ★</div>
     <button class="screen-btn" id="extra-mode-btn" onclick="startTrueMode()" style="display:none;border-color:#ff88ff;color:#ff88ff;">★ TRUE MODE</button>
     <button class="screen-btn" onclick="startGame()">▶ PLAY AGAIN</button>
@@ -162,6 +175,52 @@
     <div id="mr-tracklist" style="width:100%;flex:1;overflow-y:auto;display:flex;flex-direction:column;gap:4px;"></div>
     <div id="mr-nowplaying" style="margin-top:10px;font-size:11px;color:#aa66dd;min-height:16px;text-align:center;"></div>
     <button class="screen-btn" onclick="closeMusicRoom()" style="margin-top:10px;font-size:12px;">← BACK</button>
+  </div>
+
+  <!-- Debug Menu -->
+  <div id="debug-menu" style="display:none;position:absolute;top:0;left:0;width:544px;height:448px;
+       background:#050010f5;z-index:20;color:#00ff88;font-family:monospace;
+       flex-direction:column;align-items:center;justify-content:center;padding:20px;box-sizing:border-box;gap:10px;">
+    <div style="font-size:14px;letter-spacing:4px;color:#00ff88;margin-bottom:8px;">D3BUGM0D3 ACTIVE</div>
+    <div style="font-size:10px;color:#336633;margin-bottom:12px;">Developer Access Terminal</div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;width:100%;max-width:400px;">
+      <div style="color:#88ff88;font-size:11px;padding-top:6px;">MODE:</div>
+      <select id="dbg-mode" style="background:#0a1a0a;border:1px solid #00ff88;color:#00ff88;font-family:monospace;font-size:11px;padding:4px;">
+        <option value="baby">✿ Baby</option>
+        <option value="normal">☆ Normal</option>
+        <option value="hard">▶ Hard</option>
+        <option value="true">★ True</option>
+      </select>
+      <div style="color:#88ff88;font-size:11px;padding-top:6px;">STAGE:</div>
+      <select id="dbg-stage" style="background:#0a1a0a;border:1px solid #00ff88;color:#00ff88;font-family:monospace;font-size:11px;padding:4px;">
+        <option value="1">Stage 1</option><option value="2">Stage 2</option>
+        <option value="3">Stage 3</option><option value="4">Stage 4</option>
+        <option value="5">Stage 5</option><option value="6">Stage 6</option>
+        <option value="7">Stage 7</option>
+      </select>
+      <div style="color:#88ff88;font-size:11px;padding-top:6px;">LIVES:</div>
+      <div style="display:flex;gap:6px;align-items:center;">
+        <select id="dbg-lives" style="background:#0a1a0a;border:1px solid #00ff88;color:#00ff88;font-family:monospace;font-size:11px;padding:4px;flex:1;">
+          <option value="1">1</option><option value="2">2</option><option value="3" selected>3</option>
+          <option value="4">4</option><option value="5">5</option><option value="6">6</option><option value="7">7</option>
+        </select>
+        <label style="font-size:10px;color:#88ff88;display:flex;align-items:center;gap:3px;cursor:pointer;">
+          <input type="checkbox" id="dbg-infinite" style="accent-color:#00ff88;"> ∞
+        </label>
+      </div>
+      <div style="color:#88ff88;font-size:11px;padding-top:6px;">POWER:</div>
+      <select id="dbg-power" style="background:#0a1a0a;border:1px solid #00ff88;color:#00ff88;font-family:monospace;font-size:11px;padding:4px;">
+        <option value="1.0">1.0 – Single</option>
+        <option value="1.5">1.5 – Double</option>
+        <option value="2.5">2.5 – Orbs</option>
+        <option value="3.5">3.5 – Homing</option>
+        <option value="4.0">4.0 – MAX</option>
+      </select>
+    </div>
+    <div style="display:flex;gap:8px;margin-top:14px;">
+      <button class="screen-btn" onclick="launchDebug()" style="border-color:#00ff88;color:#00ff88;font-size:12px;">▶ LAUNCH</button>
+      <button class="screen-btn" onclick="closeDebugMenu()" style="font-size:12px;">✕ CANCEL</button>
+    </div>
   </div>
   <div id="stage-banner"></div>
 </div>
@@ -849,6 +908,7 @@ function advanceAfterBoss() {
     document.getElementById('victory-score').textContent='SCORE: '+score.toLocaleString();
     document.getElementById('victory-screen').style.display='flex';
     if (score>hiScore) hiScore=score;
+    showVictoryPassword();  // save hi-score + show victory password info
     // Hard mode clear → unlock True Mode
     if (hardMode && !trueMode) {
       hardCleared = true;
@@ -860,6 +920,7 @@ function advanceAfterBoss() {
     wavePhase=0; waveDelay=120; spawnQueue=[];
     enemies=[]; enemyBullets=[];
     bgScrollY=0; bgPaused = false;
+    showStagePassword(stage);  // show 8-bit password for this stage
     showStageBanner('STAGE '+stage);
     musicOnBossDefeated(stage);  // stage already incremented
     updateUI();
@@ -1011,7 +1072,7 @@ function updateEnemyBullets() {
 }
 
 function playerHit() {
-  lives--;
+  if (!debugInfiniteLives) lives--;
   invincible=180; enemyBullets=[];
   power=Math.max(1,power-0.5);
   for(let i=0;i<20;i++) spawnParticle(player.x,player.y,'#ff4488',5);
@@ -1692,6 +1753,7 @@ function showTitle() {
   document.getElementById('victory-screen').style.display='none';
   document.getElementById('title-screen').style.display='flex';
   if (_musicStarted) musicOnTitle();
+  renderTitleHiScores();
   const eb = document.getElementById('title-extra-btn');
   if (eb) eb.style.display = hardCleared ? 'inline-block' : 'none';
   state='title';
@@ -1909,6 +1971,210 @@ function closeMusicRoom() {
   // Resume title music
   if (state === 'title') musicOnTitle();
 }
+
+
+// ═══════════════════════════════════════════════════════════════
+//  HIGH SCORE SAVE SYSTEM  (localStorage)
+// ═══════════════════════════════════════════════════════════════
+const HS_KEY = 'touhou_hiscores';
+
+function loadHiScores() {
+  try {
+    return JSON.parse(localStorage.getItem(HS_KEY)) || {};
+  } catch(e) { return {}; }
+}
+function saveHiScore(modeKey, scoreVal) {
+  const hs = loadHiScores();
+  if (!hs[modeKey] || scoreVal > hs[modeKey]) {
+    hs[modeKey] = scoreVal;
+    try { localStorage.setItem(HS_KEY, JSON.stringify(hs)); } catch(e){}
+  }
+}
+function getModeKey() {
+  if (trueMode)  return 'true';
+  if (hardMode)  return 'hard';
+  if (easyMode)  return 'normal';
+  if (babyMode)  return 'baby';
+  return 'normal';
+}
+function renderTitleHiScores() {
+  const hs = loadHiScores();
+  const labels = { hard:'Hard', normal:'Normal', baby:'Baby', true:'True' };
+  const lines = Object.entries(labels).map(([k,l])=>{
+    const v = hs[k];
+    return v ? `${l}: ${v.toLocaleString()}` : `${l}: ---`;
+  }).join('  ·  ');
+  const el = document.getElementById('title-hiscore-box');
+  if (el) el.textContent = '⟨ Hi-Score ⟩  ' + lines;
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  PASSWORD / LEVEL CODE SYSTEM
+// ═══════════════════════════════════════════════════════════════
+// Passwords are deterministic 6-char strings encoding mode+stage.
+// Normal and Baby get different codes for the same stage.
+// Format: encode as base-36 of (seed XOR stageIndex)
+
+const PW_SALT_NORMAL = 0x4E4F; // 'NO'
+const PW_SALT_BABY   = 0x4241; // 'BA'
+
+function generatePassword(modeKey, stageNum) {
+  // Not available for hard/true mode
+  if (modeKey === 'hard' || modeKey === 'true') return null;
+  const salt = modeKey === 'baby' ? PW_SALT_BABY : PW_SALT_NORMAL;
+  const val = (salt * 31 + stageNum * 137 + stageNum * salt) & 0xFFFFFF;
+  // Convert to 6-char uppercase alphanumeric
+  const chars = '0123456789ABCDEFGHJKLMNPQRSTUVWXYZ';
+  let code = '';
+  let v = val;
+  for (let i = 0; i < 6; i++) {
+    code = chars[v % chars.length] + code;
+    v = Math.floor(v / chars.length);
+  }
+  return code;
+}
+
+function decodePassword(code) {
+  if (code === 'D3BUGM0D3') return { type:'debug' };
+  // Try normal and baby for stages 2-7
+  for (const modeKey of ['normal','baby']) {
+    for (let s = 2; s <= 7; s++) {
+      if (generatePassword(modeKey, s) === code) {
+        return { type:'stage', modeKey, stage:s };
+      }
+    }
+  }
+  return null;
+}
+
+function submitPassword() {
+  const input = document.getElementById('pw-input');
+  const code = (input.value || '').trim().toUpperCase();
+  const fb = document.getElementById('pw-feedback');
+  if (!code) { fb.textContent = ''; return; }
+
+  const result = decodePassword(code);
+  if (!result) {
+    fb.style.color = '#ff6644';
+    fb.textContent = '✗ Invalid code';
+    return;
+  }
+  if (result.type === 'debug') {
+    fb.textContent = '';
+    input.value = '';
+    openDebugMenu();
+    return;
+  }
+  // Valid stage code
+  fb.style.color = '#44ffcc';
+  fb.textContent = '✓ Loading stage ' + result.stage + '…';
+  input.value = '';
+  setTimeout(() => {
+    fb.textContent = '';
+    if (result.modeKey === 'baby') startBabyMode();
+    else startEasyMode();
+    // Override stage after init
+    stage = result.stage;
+    bgScrollY = 0;
+    wavePhase = 0; waveDelay = 90; spawnQueue = [];
+    enemies = []; enemyBullets = [];
+    showStageBanner('STAGE ' + stage);
+    musicOnStageStart(stage);
+    updateUI();
+  }, 300);
+}
+
+function showVictoryPassword() {
+  // Show next-stage password on victory screen (not for hard/true)
+  const modeKey = getModeKey();
+  const pwEl = document.getElementById('victory-password');
+  const hsEl = document.getElementById('victory-hiscore');
+
+  // Save hi-score
+  saveHiScore(modeKey, score);
+  const hs = loadHiScores();
+  if (hsEl) {
+    const prev = hs[modeKey] || 0;
+    hsEl.textContent = score >= prev
+      ? '★ NEW HI-SCORE: ' + score.toLocaleString() + ' ★'
+      : 'HI-SCORE: ' + prev.toLocaleString();
+  }
+
+  if (!pwEl) return;
+  if (modeKey === 'hard' || modeKey === 'true') {
+    pwEl.textContent = '';
+    return;
+  }
+  // Show codes for stages 2-6 (completing stage 6 = game clear, no next)
+  // We're showing the password AFTER the last stage cleared, so offer stage password recap
+  pwEl.innerHTML = '';
+  // Show the code used to reach THIS game, as confirmation
+}
+
+// Show per-stage password after each boss (for stages 2+)
+function showStagePassword(nextStage) {
+  const modeKey = getModeKey();
+  if (modeKey === 'hard' || modeKey === 'true') return;
+  const pw = generatePassword(modeKey, nextStage);
+  if (!pw) return;
+  // Show it on a stage banner momentarily
+  const el = document.getElementById('stage-banner');
+  if (el) {
+    const orig = el.textContent;
+    const origOp = el.style.opacity;
+    el.innerHTML = `STAGE ${nextStage}<br><span style="font-size:13px;color:#44ffcc;letter-spacing:4px;">${pw}</span>`;
+    el.style.opacity = 1;
+    setTimeout(() => { el.style.opacity = 0; el.innerHTML = ''; }, 4000);
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  DEBUG MENU
+// ═══════════════════════════════════════════════════════════════
+let debugInfiniteLives = false;
+
+function openDebugMenu() {
+  document.getElementById('title-screen').style.display = 'none';
+  document.getElementById('debug-menu').style.display = 'flex';
+}
+function closeDebugMenu() {
+  document.getElementById('debug-menu').style.display = 'none';
+  document.getElementById('title-screen').style.display = 'flex';
+}
+function launchDebug() {
+  const mode    = document.getElementById('dbg-mode').value;
+  const stageN  = parseInt(document.getElementById('dbg-stage').value);
+  const livesN  = parseInt(document.getElementById('dbg-lives').value);
+  const infLives= document.getElementById('dbg-infinite').checked;
+  const powerN  = parseFloat(document.getElementById('dbg-power').value);
+
+  document.getElementById('debug-menu').style.display = 'none';
+
+  // Set mode flags
+  trueMode=false; hardMode=false; easyMode=false; babyMode=false;
+  if (mode==='true')   { trueMode=true; }
+  else if (mode==='hard')  { hardMode=true; }
+  else if (mode==='normal'){ easyMode=true; }
+  else                     { babyMode=true; }
+
+  initGame();
+  // Override after init
+  stage   = stageN;
+  lives   = livesN;
+  power   = powerN;
+  debugInfiniteLives = infLives;
+  bgScrollY = 0;
+  wavePhase=0; waveDelay=90; spawnQueue=[];
+  enemies=[]; enemyBullets=[];
+  showStageBanner('DBG: STAGE ' + stageN);
+  musicOnStageStart(stageN);
+  updateUI();
+  state = 'playing';
+}
+
+// Infinite lives patch (applied at playerHit call site via wrapper)
+const _origPlayerHit = playerHit;
+// Override defined after playerHit exists – see boot section
 
 </script>
 </body>
