@@ -204,11 +204,19 @@ document.addEventListener('keyup',   e=>{ keys[e.code]=false; });
 //  BOSS ROSTER  (maps stage → sprite key + display name)
 // ═══════════════════════════════════════════════════════════════
 const BOSS_ROSTER = [
-  { key:'boss_reimu',  name:'博麗 霊夢  Hakurei Reimu',  w:48, h:56 },
-  { key:'boss_marisa', name:'霧雨 魔理沙  Kirisame Marisa', w:48, h:56 },
-  { key:'boss_sakuya', name:'十六夜 咲夜  Izayoi Sakuya',  w:48, h:56 },
-  { key:'boss_yukari', name:'八雲 紫  Yakumo Yukari',     w:56, h:64 },
+  { key:'boss_reimu',  name:'博麗 霊夢  Hakurei Reimu',   w:48, h:56,
+    quip:"Don't expect me to go easy on you just because I'm the stage 1 boss." },
+  { key:'boss_marisa', name:'霧雨 魔理沙  Kirisame Marisa', w:48, h:56,
+    quip:"I borrowed some spells from a book. Don't worry about which book." },
+  { key:'boss_sakuya', name:'十六夜 咲夜  Izayoi Sakuya',  w:48, h:56,
+    quip:"I can stop time, so dying to my bullets is entirely your own fault." },
+  { key:'boss_yukari', name:'八雲 紫  Yakumo Yukari',      w:56, h:64,
+    quip:"Oh my. A human made it this far? How novel. How unfortunate for you." },
 ];
+
+// boss dialogue
+let bossQuip = '';
+let bossQuipTimer = 0;   // frames remaining to show quip
 
 // ═══════════════════════════════════════════════════════════════
 //  INIT
@@ -374,6 +382,7 @@ function spawnBoss() {
   document.getElementById('boss-section').style.display='block';
   updateBossHp();
   showStageBanner('BOSS: '+def.name);
+  bossQuip = def.quip || ''; bossQuipTimer = 320;
 }
 
 function updateBossHp() {
@@ -459,7 +468,7 @@ function updateEnemies() {
         if (e.hp<=0) {
           score+=e.score*stage;
           for(let p=0;p<10;p++) spawnParticle(e.x+e.w/2,e.y+e.h/2,'#44ffcc',4);
-          if (Math.random()<0.6) items.push({x:e.x+e.w/2,y:e.y+e.h/2,vy:1,type:Math.random()<0.2?'power':'point'});
+          if (Math.random()<0.8) items.push({x:e.x+e.w/2,y:e.y+e.h/2,vy:1,type:'power'});
           enemies.splice(i,1); killed=true; break;
         }
       }
@@ -718,6 +727,74 @@ function drawParticles() {
   ctx.globalAlpha=1;
 }
 
+function drawBossQuip() {
+  if (bossQuipTimer <= 0 || !bossQuip) return;
+  bossQuipTimer--;
+  const alpha = bossQuipTimer < 60 ? bossQuipTimer / 60 : bossQuipTimer > 280 ? (320 - bossQuipTimer) / 40 : 1;
+
+  const maxW = 260;
+  const pad = 10;
+  ctx.font = '11px "Noto Serif JP"';
+
+  // word-wrap quip into lines
+  const words = bossQuip.split(' ');
+  const lines = [];
+  let cur = '';
+  words.forEach(w => {
+    const test = cur ? cur + ' ' + w : w;
+    if (ctx.measureText(test).width > maxW - pad * 2) { lines.push(cur); cur = w; }
+    else cur = test;
+  });
+  if (cur) lines.push(cur);
+
+  const lineH = 16;
+  const boxW = maxW;
+  const boxH = lines.length * lineH + pad * 2 + 14;
+  const bx = W / 2 - boxW / 2;
+  const by = H - 90 - boxH;
+
+  ctx.save();
+  ctx.globalAlpha = alpha * 0.92;
+
+  // bubble background
+  ctx.fillStyle = '#0d0018';
+  ctx.strokeStyle = '#cc44ff';
+  ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  ctx.roundRect(bx, by, boxW, boxH, 6);
+  ctx.fill(); ctx.stroke();
+
+  // little triangle tail pointing down toward player
+  ctx.fillStyle = '#0d0018';
+  ctx.beginPath();
+  ctx.moveTo(W/2 - 8, by + boxH);
+  ctx.lineTo(W/2 + 8, by + boxH);
+  ctx.lineTo(W/2,     by + boxH + 10);
+  ctx.closePath();
+  ctx.fill();
+  ctx.strokeStyle = '#cc44ff';
+  ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  ctx.moveTo(W/2 - 8, by + boxH - 1);
+  ctx.lineTo(W/2,     by + boxH + 10);
+  ctx.lineTo(W/2 + 8, by + boxH - 1);
+  ctx.stroke();
+
+  // speaker name
+  ctx.fillStyle = '#ff88cc';
+  ctx.font = 'bold 10px "Noto Serif JP"';
+  ctx.textAlign = 'left';
+  ctx.fillText(boss ? boss.name.split('  ')[1] || boss.name : '', bx + pad, by + pad + 9);
+
+  // quip text
+  ctx.fillStyle = '#e0c0ff';
+  ctx.font = '11px "Noto Serif JP"';
+  lines.forEach((ln, i) => {
+    ctx.fillText(ln, bx + pad, by + pad + 22 + i * lineH);
+  });
+
+  ctx.restore();
+}
 function drawHUD() {
   ctx.fillStyle='rgba(180,120,255,0.25)';
   ctx.font='10px "Noto Serif JP"';
@@ -788,6 +865,7 @@ function loop() {
   drawBoss();
   drawBullets();
   drawPlayer();
+  drawBossQuip();
   drawHUD();
 
   if (frame-lastUIFrame>10) { updateUI(); lastUIFrame=frame; }
