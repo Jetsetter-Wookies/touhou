@@ -118,6 +118,7 @@
     <div style="font-size:14px;color:#cc88ff;margin-bottom:4px;">~ Phantasmal Dream Land ~</div>
     <div class="screen-sub">幻の夢の国へ</div>
     <button class="screen-btn" onclick="startGame()">▶ START GAME</button>
+    <button class="screen-btn" onclick="startEasyMode()" style="border-color:#88ffcc;color:#88ffcc;">☆ EASY MODE</button>
     <button class="screen-btn" id="title-extra-btn" onclick="startExtraMode()" style="display:none;border-color:#ff88ff;color:#ff88ff;">✦ EXTRA MODE</button>
     <div class="controls-list">
       <span>Arrow Keys</span> — Move<br>
@@ -192,7 +193,8 @@ ctx.imageSmoothingEnabled = false;   // keep sprites crisp / pixel-art
 //  STATE
 // ═══════════════════════════════════════════════════════════════
 let state = 'loading';
-let extraMode = false;
+let extraMode = false;   // true after first clear
+let easyMode  = false;   // relaxed bullet counts & speeds
 let scrollY = 0;   // true after first clear
 let score=0, hiScore=100000, graze=0, power=1.0;
 let lives=3, bombs=3, frame=0, stage=1, paused=false;
@@ -368,32 +370,40 @@ function updateHomingBullets() {
 // ═══════════════════════════════════════════════════════════════
 const patterns = {
   spread(e) {
-    const n = 5+stage;
+    const n = easyMode ? 3 : 5+stage;
+    const spd = easyMode ? 1.4 : 2.5;
     for (let i=0;i<n;i++) {
       const a = (Math.PI/(n-1))*i + Math.PI*0.1;
-      eb(e, Math.cos(a)*2.5, Math.sin(a)*2.5, '#ff2266', 4);
+      eb(e, Math.cos(a)*spd, Math.sin(a)*spd, '#ff2266', 4);
     }
   },
   aimed(e) {
     const a = Math.atan2(player.y-e.y, player.x-e.x);
-    const sp = 3+stage*0.3;
-    for (let i=-1;i<=1;i++) eb(e, Math.cos(a+i*0.2)*sp, Math.sin(a+i*0.2)*sp, '#ffaa00', 4);
+    const sp = easyMode ? 1.2 : 3+stage*0.3;
+    const shots = easyMode ? 1 : 3;
+    const spread = easyMode ? 0 : 0.2;
+    for (let i=0;i<shots;i++) eb(e, Math.cos(a+(i-(shots-1)/2)*spread)*sp, Math.sin(a+(i-(shots-1)/2)*spread)*sp, '#ffaa00', 4);
   },
   ring(e, n=12) {
-    for (let i=0;i<n;i++) {
-      const a = (Math.PI*2/n)*i+(e.ringOffset||0);
-      eb(e, Math.cos(a)*2.2, Math.sin(a)*2.2, '#44ffcc', 5);
+    const count = easyMode ? Math.min(6, Math.floor(n/2)) : n;
+    const spd = easyMode ? 1.3 : 2.2;
+    for (let i=0;i<count;i++) {
+      const a = (Math.PI*2/count)*i+(e.ringOffset||0);
+      eb(e, Math.cos(a)*spd, Math.sin(a)*spd, '#44ffcc', 5);
     }
   },
   spiral(e) {
     const a = e.spiralAngle||0;
-    for (let i=0;i<3;i++) {
-      const aa = a+(Math.PI*2/3)*i;
-      eb(e, Math.cos(aa)*2.5, Math.sin(aa)*2.5, '#cc44ff', 4);
+    const arms = easyMode ? 2 : 3;
+    const spd  = easyMode ? 1.4 : 2.5;
+    for (let i=0;i<arms;i++) {
+      const aa = a+(Math.PI*2/arms)*i;
+      eb(e, Math.cos(aa)*spd, Math.sin(aa)*spd, '#cc44ff', 4);
     }
-    e.spiralAngle = a+0.2;
+    e.spiralAngle = a + (easyMode ? 0.12 : 0.2);
   },
   laser(e) {
+    if (easyMode) return;   // no laser in easy mode
     const a = Math.atan2(player.y-e.y, player.x-e.x);
     for (let i=0;i<15;i++) {
       setTimeout(()=>{ eb(e, Math.cos(a)*(4+i*0.2), Math.sin(a)*(4+i*0.2), '#ff44ff', 3); }, i*40);
@@ -479,6 +489,7 @@ function spawnWave(waveIndex) {
 }
 
 function spawnEnemy(sprKey, x, y, vx, vy, pattern, hp, sc, extra={}) {
+  if (sprKey === 'enemy_c') hp = 1;  // one-hit kill
   const sizes = { enemy_a:{w:24,h:24}, enemy_b:{w:28,h:28}, enemy_c:{w:32,h:32} };
   const s = sizes[sprKey]||{w:24,h:24};
   enemies.push({ sprKey, x, y, vx, vy, pattern, hp, maxHp:hp, score:sc,
@@ -491,8 +502,8 @@ function spawnEnemy(sprKey, x, y, vx, vy, pattern, hp, sc, extra={}) {
 function spawnBoss() {
   bossActive = true;
   const def = BOSS_ROSTER[(stage-1) % BOSS_ROSTER.length];
-  const baseHp = extraMode ? 6000 : 3000;
-  bossMaxHp = baseHp + stage*1200; bossHp = bossMaxHp;
+  const baseHp = extraMode ? 6000 : easyMode ? 1200 : 3000;
+  bossMaxHp = baseHp + (easyMode ? stage*400 : stage*1200); bossHp = bossMaxHp;
   boss = { ...def, x:W/2-def.w/2, y:30, hp:bossHp,
            targetX:W/2, targetY:60, shootTimer:0,
            moveTimer:0, spiralAngle:0, ringOffset:0 };
@@ -524,18 +535,19 @@ function bossBehavior() {
   const phase = boss.hp<bossMaxHp*0.4?2 : boss.hp<bossMaxHp*0.7?1 : 0;
   const be = { x:boss.x+boss.w/2, y:boss.y+boss.h/2, spiralAngle:boss.spiralAngle, ringOffset:boss.ringOffset };
 
+  const ti = easyMode ? 3 : 1;  // interval multiplier: easy = 3x longer gaps
   if (phase===0) {
-    if (boss.shootTimer%30===0) patterns.aimed(be);
-    if (boss.shootTimer%80===0) patterns.spread(be);
+    if (boss.shootTimer%(30*ti)===0) patterns.aimed(be);
+    if (boss.shootTimer%(80*ti)===0) patterns.spread(be);
   } else if (phase===1) {
-    if (boss.shootTimer%20===0) { patterns.spiral(be); boss.spiralAngle=be.spiralAngle; }
-    if (boss.shootTimer%100===0) patterns.ring(be,16);
-    if (boss.shootTimer%50===0) patterns.aimed(be);
+    if (boss.shootTimer%(20*ti)===0) { patterns.spiral(be); boss.spiralAngle=be.spiralAngle; }
+    if (boss.shootTimer%(100*ti)===0) patterns.ring(be, easyMode ? 6 : 16);
+    if (boss.shootTimer%(50*ti)===0) patterns.aimed(be);
   } else {
-    if (boss.shootTimer%15===0) { patterns.spiral(be); boss.spiralAngle=be.spiralAngle; }
-    if (boss.shootTimer%60===0) patterns.ring(be,20);
-    if (boss.shootTimer%25===0) patterns.aimed(be);
-    if (boss.shootTimer%200===0) patterns.laser(be);
+    if (boss.shootTimer%(15*ti)===0) { patterns.spiral(be); boss.spiralAngle=be.spiralAngle; }
+    if (boss.shootTimer%(60*ti)===0) patterns.ring(be, easyMode ? 6 : 20);
+    if (boss.shootTimer%(25*ti)===0) patterns.aimed(be);
+    if (boss.shootTimer%(200*ti)===0) patterns.laser(be);
   }
 
   bossHp = boss.hp;
@@ -579,7 +591,7 @@ function updateEnemies() {
       const proxy = { x:e.x+e.w/2, y:e.y+e.h/2, spiralAngle:e.spiralAngle, ringOffset:e.ringOffset };
       patterns[e.pattern](proxy);
       if (e.pattern==='spiral') e.spiralAngle=proxy.spiralAngle;
-      e.shootTimer = Math.max(30,80-stage*5);
+      e.shootTimer = easyMode ? 120 : Math.max(30,80-stage*5);
     }
     // bullet hits
     let killed = false;
@@ -982,7 +994,7 @@ let lastUIFrame=0;
 function updateUI() {
   document.getElementById('scoreDisplay').textContent=score.toLocaleString();
   document.getElementById('hiScoreDisplay').textContent=hiScore.toLocaleString();
-  document.getElementById('stageDisplay').textContent=(extraMode?"✦":"")+stage;
+  document.getElementById('stageDisplay').textContent=(extraMode?"✦":easyMode?"☆":"")+stage;
   document.getElementById('powerDisplay').textContent=power.toFixed(1);
   document.getElementById('grazeDisplay').textContent=graze;
   // lives
@@ -1050,8 +1062,22 @@ function loop() {
 // ═══════════════════════════════════════════════════════════════
 //  SCREEN TRANSITIONS
 // ═══════════════════════════════════════════════════════════════
+function startEasyMode() {
+  easyMode  = true;
+  extraMode = false;
+  easyMode = false;
+  document.getElementById('title-screen').style.display='none';
+  document.getElementById('gameover-screen').style.display='none';
+  document.getElementById('victory-screen').style.display='none';
+  document.getElementById('boss-section').style.display='none';
+  initGame();
+  showStageBanner('☆ EASY MODE ☆');
+  state='playing';
+}
+
 function startExtraMode() {
   extraMode = true;
+  easyMode = false;
   document.getElementById('victory-screen').style.display='none';
   document.getElementById('extra-unlock-msg').style.display='none';
   document.getElementById('extra-mode-btn').style.display='none';
@@ -1063,6 +1089,7 @@ function startExtraMode() {
 
 function startGame() {
   extraMode = false;
+  easyMode = false;
   document.getElementById('title-screen').style.display='none';
   document.getElementById('gameover-screen').style.display='none';
   document.getElementById('victory-screen').style.display='none';
