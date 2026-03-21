@@ -216,7 +216,8 @@ const BOSS_ROSTER = [
 
 // boss dialogue
 let bossQuip = '';
-let bossQuipTimer = 0;   // frames remaining to show quip
+let bossQuipSpeaker = '';
+let bossQuipTimer = 0;
 
 // ═══════════════════════════════════════════════════════════════
 //  INIT
@@ -267,18 +268,91 @@ function drawSprite(key, x, y, w, h, alpha=1, angle=0) {
 }
 
 // ═══════════════════════════════════════════════════════════════
-//  SHOOTING
+//  SHOOTING  – 4 distinct power tiers
+//  Tier 1 (power <1.5): single centre stream
+//  Tier 2 (power 1.5–2.4): double stream
+//  Tier 3 (power 2.5–3.4): double stream + side orbs shoot straight up
+//  Tier 4 (power >=3.5): double stream + side orbs shoot HOMING bullets
 // ═══════════════════════════════════════════════════════════════
+
+// Side orb state – positions animate outward at higher power
+const orbs = [
+  { side: -1, angle: 0, shootTimer: 0 },  // left orb
+  { side:  1, angle: 0, shootTimer: 0 },  // right orb
+];
+
+function getOrbPos(orb) {
+  const dist = power >= 2.5 ? 28 : 0;
+  return {
+    x: player.x + orb.side * dist,
+    y: player.y - 4
+  };
+}
+
 function playerShoot() {
-  const opts = [{ dx:0, speed:12 }];
-  if (power>=1.5) opts.push({ dx:-6, speed:11 },{ dx:6, speed:11 });
-  if (power>=2.5) opts.push({ dx:-12, speed:10 },{ dx:12, speed:10 });
-  if (power>=3.5) opts.push({ dx:-3, speed:12 },{ dx:3, speed:12 });
-  opts.forEach(o => bullets.push({
-    x: player.x + o.dx, y: player.y-14,
-    dx: o.dx*0.1, dy: -o.speed,
-    w:3, h:8, dmg:10
-  }));
+  // ── Tier 1: single stream ──
+  if (power < 1.5) {
+    bullets.push({ x:player.x, y:player.y-14, dx:0, dy:-13, dmg:12, type:'laser' });
+  }
+  // ── Tier 2: double stream ──
+  else if (power < 2.5) {
+    bullets.push({ x:player.x-5, y:player.y-14, dx:-0.3, dy:-12, dmg:10, type:'laser' });
+    bullets.push({ x:player.x+5, y:player.y-14, dx: 0.3, dy:-12, dmg:10, type:'laser' });
+  }
+  // ── Tier 3+: double stream (orbs handle their own firing below) ──
+  else {
+    bullets.push({ x:player.x-5, y:player.y-14, dx:-0.3, dy:-12, dmg:10, type:'laser' });
+    bullets.push({ x:player.x+5, y:player.y-14, dx: 0.3, dy:-12, dmg:10, type:'laser' });
+  }
+}
+
+function updateOrbs() {
+  if (power < 2.5) return;
+  orbs.forEach(orb => {
+    orb.shootTimer++;
+    const interval = power >= 3.5 ? 18 : 25;
+    if (orb.shootTimer < interval) return;
+    orb.shootTimer = 0;
+    const pos = getOrbPos(orb);
+
+    if (power >= 3.5) {
+      // Homing bullet: finds nearest enemy/boss and curves toward it
+      bullets.push({
+        x: pos.x, y: pos.y,
+        dx: orb.side * 1.5, dy: -6,
+        dmg: 14, type: 'homing',
+        homing: true
+      });
+    } else {
+      // Tier 3: straight-up orb shot
+      bullets.push({ x:pos.x, y:pos.y, dx:0, dy:-10, dmg:12, type:'orb' });
+    }
+  });
+}
+
+function updateHomingBullets() {
+  bullets.forEach(b => {
+    if (!b.homing) return;
+    // find nearest target
+    let target = null, best = 999999;
+    if (bossActive && boss) {
+      const d = Math.hypot(boss.x+boss.w/2-b.x, boss.y+boss.h/2-b.y);
+      if (d < best) { best = d; target = { x:boss.x+boss.w/2, y:boss.y+boss.h/2 }; }
+    }
+    enemies.forEach(e => {
+      const d = Math.hypot(e.x+e.w/2-b.x, e.y+e.h/2-b.y);
+      if (d < best) { best = d; target = { x:e.x+e.w/2, y:e.y+e.h/2 }; }
+    });
+    if (target) {
+      const a = Math.atan2(target.y - b.y, target.x - b.x);
+      const spd = Math.hypot(b.dx, b.dy);
+      b.dx += Math.cos(a) * 0.8;
+      b.dy += Math.sin(a) * 0.8;
+      // cap speed
+      const ns = Math.hypot(b.dx, b.dy);
+      if (ns > 9) { b.dx = b.dx/ns*9; b.dy = b.dy/ns*9; }
+    }
+  });
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -339,26 +413,60 @@ function processSpawnQueue() {
   }
 }
 
+// 10 distinct waves before boss
 function spawnWave(waveIndex) {
-  const w = waveIndex % 3;
-  if (w === 0) {
-    for (let i = 0; i < 6; i++) {
-      const ii = i;
-      queueSpawn(i * 18, () => spawnEnemy('enemy_a', 60 + ii * 50, -30, 0, 1.2, 'aimed', 30, 100));
-    }
-  } else if (w === 1) {
-    for (let i = 0; i < 4; i++) {
-      const ii = i;
-      queueSpawn(i * 24, () => {
-        spawnEnemy('enemy_b', 30 + ii * 30, -20, 0.5, 1.5, 'spread', 40, 150);
-        spawnEnemy('enemy_b', W - 30 - ii * 30, -20, -0.5, 1.5, 'spread', 40, 150);
+  const w = waveIndex % 10;
+  switch(w) {
+    case 0: // small line from top
+      for (let i=0;i<6;i++) { const ii=i;
+        queueSpawn(i*20, ()=>spawnEnemy('enemy_a',50+ii*50,-30, 0,1.2,'aimed',30,100)); }
+      break;
+    case 1: // two columns converging inward
+      for (let i=0;i<5;i++) { const ii=i;
+        queueSpawn(i*18, ()=>{ spawnEnemy('enemy_a',20,-40-ii*30, 0.8,1.0,'aimed',30,100);
+                               spawnEnemy('enemy_a',W-20,-40-ii*30,-0.8,1.0,'aimed',30,100); }); }
+      break;
+    case 2: // spread shooters across top
+      for (let i=0;i<5;i++) { const ii=i;
+        queueSpawn(i*25, ()=>spawnEnemy('enemy_b',W*(ii+1)/6,-30,0,0.8,'spread',40,150)); }
+      break;
+    case 3: // V-formation
+      for (let i=0;i<7;i++) { const ii=i;
+        queueSpawn(i*15, ()=>spawnEnemy('enemy_a', W/2+(ii%2===0?1:-1)*(ii/2)*45, -30-ii*10, 0, 1.3,'aimed',30,100)); }
+      break;
+    case 4: // two waves of ring shooters
+      for (let i=0;i<4;i++) { const ii=i;
+        queueSpawn(i*30, ()=>spawnEnemy('enemy_b',60+ii*85,-30, 0,1.0,'ring',50,150,{ringOffset:ii*0.4})); }
+      queueSpawn(80, ()=>{
+        for(let i=0;i<3;i++){const ii=i; queueSpawn(i*25,()=>spawnEnemy('enemy_b',80+ii*100,-30,0,1.1,'ring',50,150,{ringOffset:ii*0.8}));}
       });
-    }
-  } else {
-    for (let i = 0; i < 5; i++) {
-      const ii = i;
-      queueSpawn(i * 30, () => spawnEnemy('enemy_c', W * (ii + 1) / 6, -20, Math.sin(ii) * 0.8, 1, 'ring', 60, 200, { ringOffset: ii * 0.5 }));
-    }
+      break;
+    case 5: // spiral shooters flanking
+      for (let i=0;i<3;i++) { const ii=i;
+        queueSpawn(i*35, ()=>{ spawnEnemy('enemy_c',40+ii*40,-30, 0.4+ii*0.1,1.2,'spiral',60,200);
+                               spawnEnemy('enemy_c',W-40-ii*40,-30,-0.4-ii*0.1,1.2,'spiral',60,200); }); }
+      break;
+    case 6: // dense aimed swarm
+      for (let i=0;i<10;i++) { const ii=i;
+        queueSpawn(i*14, ()=>spawnEnemy('enemy_a', 30+ii*33, -30, Math.sin(ii)*0.5, 1.4,'aimed',25,80)); }
+      break;
+    case 7: // ring + spread mix
+      for (let i=0;i<3;i++) { const ii=i;
+        queueSpawn(i*40, ()=>{ spawnEnemy('enemy_c',W/4,-30, 0.3,1.0,'ring',70,220,{ringOffset:ii*0.6});
+                               spawnEnemy('enemy_b',W*3/4,-30,-0.3,1.0,'spread',50,180); }); }
+      break;
+    case 8: // big armoured wave
+      for (let i=0;i<6;i++) { const ii=i;
+        queueSpawn(i*22, ()=>spawnEnemy('enemy_c', W*(ii+1)/7, -30, Math.cos(ii)*0.6, 0.9,'ring',80,250,{ringOffset:ii*0.3})); }
+      break;
+    case 9: // final pre-boss mixed rush
+      for (let i=0;i<4;i++) { const ii=i;
+        queueSpawn(i*15, ()=>{ spawnEnemy('enemy_b',50+ii*60,-30, 0.2,1.3,'spread',45,160);
+                               spawnEnemy('enemy_b',W-50-ii*60,-30,-0.2,1.3,'spread',45,160); }); }
+      queueSpawn(70, ()=>{
+        for(let i=0;i<5;i++){const ii=i; queueSpawn(i*18,()=>spawnEnemy('enemy_c',W*(ii+1)/6,-30,0,1.1,'spiral',65,200));}
+      });
+      break;
   }
 }
 
@@ -382,7 +490,9 @@ function spawnBoss() {
   document.getElementById('boss-section').style.display='block';
   updateBossHp();
   showStageBanner('BOSS: '+def.name);
-  bossQuip = def.quip || ''; bossQuipTimer = 320;
+  bossQuip = def.quip || '';
+  bossQuipSpeaker = def.name.includes('  ') ? def.name.split('  ')[1] : def.name;
+  bossQuipTimer = 300;
 }
 
 function updateBossHp() {
@@ -544,42 +654,32 @@ function updateParticles() {
 }
 
 // ── Wave state machine ─────────────────────────────────────────
-// Simple timer-driven: no reliance on enemies.length for advancement.
-// Each wave fires after a fixed delay; boss fires after wave 2 delay.
+// 10 waves (phases 0-19), then pre-boss pause (20), then boss (21+)
+// Even phase = countdown to spawn; odd phase = wait for clear
 let wavePhase = 0;
-let waveDelay = 90;
+let waveDelay = 90;   // frames before wave 0
 
 function updateStage() {
   if (bossActive) return;
   processSpawnQueue();
-
-  // Only advance "wave done" phases once spawn queue is empty AND enemies are gone
   const allClear = spawnQueue.length === 0 && enemies.length === 0;
 
-  switch (wavePhase) {
-    case 0:
-      if (--waveDelay <= 0) { spawnWave(0); wavePhase = 1; }
-      break;
-    case 1:
-      if (allClear) { waveDelay = 120; wavePhase = 2; }
-      break;
-    case 2:
-      if (--waveDelay <= 0) { spawnWave(1); wavePhase = 3; }
-      break;
-    case 3:
-      if (allClear) { waveDelay = 120; wavePhase = 4; }
-      break;
-    case 4:
-      if (--waveDelay <= 0) { spawnWave(2); wavePhase = 5; }
-      break;
-    case 5:
-      if (allClear) { waveDelay = 150; wavePhase = 6; }
-      break;
-    case 6:
-      if (--waveDelay <= 0) { spawnBoss(); wavePhase = 7; }
-      break;
-    // case 7: boss fight handled by bossBehavior()
+  if (wavePhase < 20) {
+    if (wavePhase % 2 === 0) {
+      // even = countdown then spawn wave N
+      if (--waveDelay <= 0) {
+        spawnWave(wavePhase / 2);
+        wavePhase++;
+      }
+    } else {
+      // odd = wait for screen clear
+      if (allClear) { waveDelay = 90; wavePhase++; }
+    }
+  } else if (wavePhase === 20) {
+    // short dramatic pause before boss
+    if (--waveDelay <= 0) { spawnBoss(); wavePhase = 21; }
   }
+  // wavePhase 21+ = boss fight, bossBehavior() takes over
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -642,6 +742,26 @@ function drawPlayer() {
   // player sprite (drawn at pixel coords)
   drawSprite('player', px, py, player.w, player.h);
 
+  // side orbs (tier 3+)
+  if (power >= 2.5) {
+    orbs.forEach(orb => {
+      const pos = getOrbPos(orb);
+      const isHoming = power >= 3.5;
+      ctx.save();
+      ctx.shadowColor = isHoming ? '#ff44ff' : '#44aaff';
+      ctx.shadowBlur = 10;
+      ctx.fillStyle = isHoming ? '#ff88ff' : '#88ccff';
+      ctx.beginPath();
+      ctx.arc(pos.x, pos.y, 6, 0, Math.PI*2);
+      ctx.fill();
+      ctx.fillStyle = '#ffffff';
+      ctx.beginPath();
+      ctx.arc(pos.x - 2, pos.y - 2, 2, 0, Math.PI*2);
+      ctx.fill();
+      ctx.restore();
+    });
+  }
+
   // hitbox when focused
   if (keys['ShiftLeft']||keys['ShiftRight']) {
     ctx.save();
@@ -653,13 +773,25 @@ function drawPlayer() {
 }
 
 function drawBullets() {
-  ctx.save();
-  ctx.shadowColor='#ffcc00'; ctx.shadowBlur=4;
-  bullets.forEach(b=>{
-    ctx.fillStyle='#ffeeaa';
-    ctx.fillRect(b.x-1.5, b.y-4, 3, 8);
+  bullets.forEach(b => {
+    ctx.save();
+    if (b.homing) {
+      ctx.shadowColor = '#ff44ff'; ctx.shadowBlur = 8;
+      ctx.fillStyle = '#ffaaff';
+      ctx.beginPath(); ctx.arc(b.x, b.y, 4, 0, Math.PI*2); ctx.fill();
+      ctx.fillStyle = '#ffffff';
+      ctx.beginPath(); ctx.arc(b.x, b.y, 1.5, 0, Math.PI*2); ctx.fill();
+    } else if (b.type === 'orb') {
+      ctx.shadowColor = '#44aaff'; ctx.shadowBlur = 6;
+      ctx.fillStyle = '#aaddff';
+      ctx.fillRect(b.x-2, b.y-5, 4, 10);
+    } else {
+      ctx.shadowColor = '#ffcc00'; ctx.shadowBlur = 4;
+      ctx.fillStyle = '#ffeeaa';
+      ctx.fillRect(b.x-1.5, b.y-4, 3, 8);
+    }
+    ctx.restore();
   });
-  ctx.restore();
 }
 
 function drawEnemyBullets() {
@@ -730,67 +862,87 @@ function drawParticles() {
 function drawBossQuip() {
   if (bossQuipTimer <= 0 || !bossQuip) return;
   bossQuipTimer--;
-  const alpha = bossQuipTimer < 60 ? bossQuipTimer / 60 : bossQuipTimer > 280 ? (320 - bossQuipTimer) / 40 : 1;
 
-  const maxW = 260;
-  const pad = 10;
-  ctx.font = '11px "Noto Serif JP"';
+  // fade in first 30 frames, fade out last 60 frames, full opacity in between
+  const TOTAL = 300;
+  const elapsed = TOTAL - bossQuipTimer;
+  let alpha;
+  if (elapsed < 30)              alpha = elapsed / 30;
+  else if (bossQuipTimer < 60)   alpha = bossQuipTimer / 60;
+  else                           alpha = 1;
 
-  // word-wrap quip into lines
+  const pad = 12;
+  const maxW = 280;
+  ctx.save();
+  ctx.font = '12px "Noto Serif JP"';
+
+  // word-wrap
   const words = bossQuip.split(' ');
   const lines = [];
   let cur = '';
-  words.forEach(w => {
+  for (const w of words) {
     const test = cur ? cur + ' ' + w : w;
-    if (ctx.measureText(test).width > maxW - pad * 2) { lines.push(cur); cur = w; }
+    if (ctx.measureText(test).width > maxW - pad*2) { lines.push(cur); cur = w; }
     else cur = test;
-  });
+  }
   if (cur) lines.push(cur);
 
-  const lineH = 16;
+  const lineH = 18;
+  const nameH = 18;
   const boxW = maxW;
-  const boxH = lines.length * lineH + pad * 2 + 14;
-  const bx = W / 2 - boxW / 2;
-  const by = H - 90 - boxH;
+  const boxH = nameH + lines.length * lineH + pad * 2;
+  const bx = W/2 - boxW/2;
+  const by = 110;   // sits just below the boss
 
-  ctx.save();
-  ctx.globalAlpha = alpha * 0.92;
+  ctx.globalAlpha = alpha;
 
-  // bubble background
-  ctx.fillStyle = '#0d0018';
-  ctx.strokeStyle = '#cc44ff';
-  ctx.lineWidth = 1.5;
+  // shadow
+  ctx.fillStyle = 'rgba(0,0,0,0.6)';
   ctx.beginPath();
-  ctx.roundRect(bx, by, boxW, boxH, 6);
-  ctx.fill(); ctx.stroke();
-
-  // little triangle tail pointing down toward player
-  ctx.fillStyle = '#0d0018';
-  ctx.beginPath();
-  ctx.moveTo(W/2 - 8, by + boxH);
-  ctx.lineTo(W/2 + 8, by + boxH);
-  ctx.lineTo(W/2,     by + boxH + 10);
-  ctx.closePath();
+  ctx.roundRect(bx+3, by+3, boxW, boxH, 8);
   ctx.fill();
+
+  // box
+  ctx.fillStyle = '#0a0018';
   ctx.strokeStyle = '#cc44ff';
-  ctx.lineWidth = 1.5;
+  ctx.lineWidth = 2;
   ctx.beginPath();
-  ctx.moveTo(W/2 - 8, by + boxH - 1);
-  ctx.lineTo(W/2,     by + boxH + 10);
-  ctx.lineTo(W/2 + 8, by + boxH - 1);
+  ctx.roundRect(bx, by, boxW, boxH, 8);
+  ctx.fill();
   ctx.stroke();
 
-  // speaker name
-  ctx.fillStyle = '#ff88cc';
-  ctx.font = 'bold 10px "Noto Serif JP"';
-  ctx.textAlign = 'left';
-  ctx.fillText(boss ? boss.name.split('  ')[1] || boss.name : '', bx + pad, by + pad + 9);
+  // top accent line
+  ctx.strokeStyle = '#ff66cc';
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.roundRect(bx+4, by+4, boxW-8, nameH+4, 4);
+  ctx.stroke();
 
-  // quip text
-  ctx.fillStyle = '#e0c0ff';
-  ctx.font = '11px "Noto Serif JP"';
+  // triangle pointer (points up toward boss)
+  const tx = W/2;
+  ctx.fillStyle = '#0a0018';
+  ctx.strokeStyle = '#cc44ff';
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.moveTo(tx-8, by);
+  ctx.lineTo(tx+8, by);
+  ctx.lineTo(tx,   by-10);
+  ctx.closePath();
+  ctx.fill();
+  ctx.stroke();
+
+  // speaker name (English part after the double-space)
+  const displayName = bossQuipSpeaker || 'Boss';
+  ctx.fillStyle = '#ff88cc';
+  ctx.font = 'bold 11px "Noto Serif JP"';
+  ctx.textAlign = 'left';
+  ctx.fillText(displayName, bx + pad, by + pad + 11);
+
+  // quip lines
+  ctx.fillStyle = '#e8d0ff';
+  ctx.font = '12px "Noto Serif JP"';
   lines.forEach((ln, i) => {
-    ctx.fillText(ln, bx + pad, by + pad + 22 + i * lineH);
+    ctx.fillText(ln, bx + pad, by + pad + nameH + 6 + i * lineH);
   });
 
   ctx.restore();
@@ -849,6 +1001,8 @@ function loop() {
   if (bombActive>0) bombActive--;
 
   handleInput();
+  updateOrbs();
+  updateHomingBullets();
   updateStage();
   if (bossActive) bossBehavior();
   updateEnemies();
