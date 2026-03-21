@@ -707,8 +707,7 @@ function bossBehavior() {
     bossActive=false; boss=null;
     document.getElementById('boss-section').style.display='none';
     enemyBullets=[];
-
-    advanceAfterBoss();
+    // stage advance happens after defeat screen Z-press via advanceAfterBoss()
   }
 }
 
@@ -728,7 +727,7 @@ function advanceAfterBoss() {
     stage++; stageTimer=0;
     wavePhase=0; waveDelay=120; spawnQueue=[];
     enemies=[]; enemyBullets=[];
-    bgPaused = false;
+    bgScrollY=0; bgPaused = false;
     showStageBanner('STAGE '+stage);
     updateUI();
   }
@@ -1019,20 +1018,31 @@ const stars = Array.from({length:80},()=>({
 }));
 
 function drawBG() {
-  // Advance bg scroll (pause during boss)
-  if (!bgPaused) bgScrollY += extraMode ? 1.4 : 0.5;
-
   const lvl = Math.min(stage, 7);
   const bgImg = SPRITES[`bg${lvl}`];
+
   if (bgImg) {
-    const imgH = bgImg.naturalHeight;
-    // scroll loops: map bgScrollY into image coords (bottom of image = start of stage)
-    const offset = imgH - H - (bgScrollY % (imgH - H));
+    const imgH = bgImg.naturalHeight;         // e.g. 1344
+    const scrollable = imgH - H;             // pixels we can scroll through (896)
+
+    // Speed: reach top of image by the time boss spawns (wavePhase 20).
+    // wavePhase goes 0-19 over ~10 waves × ~200 frames each = ~2000 frames total.
+    // We want to cover `scrollable` pixels in ~2000 frames → speed ≈ scrollable/2000
+    const totalFrames = 2200;
+    const speed = scrollable / totalFrames;
+
+    // Advance scroll (pause during boss fight and defeat screen)
+    if (!bgPaused && !defeatScreen) {
+      bgScrollY = Math.min(bgScrollY + speed, scrollable);
+    }
+
+    // offset: 0 = show top of image (boss area), scrollable = show bottom (stage start)
+    // We start at bottom and scroll toward top, so:
+    const offset = scrollable - bgScrollY;   // starts at scrollable, ends at 0
+
     ctx.drawImage(bgImg, 0, offset, W, H, 0, 0, W, H);
-    // wrap-around seam fix
-    if (offset < 0) ctx.drawImage(bgImg, 0, 0, W, H-Math.abs(offset), 0, Math.abs(offset), W, H-Math.abs(offset));
   } else {
-    // fallback gradient
+    // fallback
     ctx.fillStyle='#060010'; ctx.fillRect(0,0,W,H);
     const starMult = extraMode ? 1.0 : 0.35;
     stars.forEach(s=>{
