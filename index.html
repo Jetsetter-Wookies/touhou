@@ -117,8 +117,9 @@
     <div class="screen-title-jp">東方幻夢郷</div>
     <div style="font-size:14px;color:#cc88ff;margin-bottom:4px;">~ Phantasmal Dream Land ~</div>
     <div class="screen-sub">幻の夢の国へ</div>
-    <button class="screen-btn" onclick="startGame()">▶ START GAME</button>
-    <button class="screen-btn" onclick="startEasyMode()" style="border-color:#88ffcc;color:#88ffcc;">☆ EASY MODE</button>
+    <button class="screen-btn" onclick="startGame()" style="border-color:#ff4444;color:#ff4444;">▶ HARD MODE</button>
+    <button class="screen-btn" onclick="startEasyMode()" style="border-color:#ffdd44;color:#ffdd44;">☆ NORMAL MODE</button>
+    <button class="screen-btn" onclick="startBabyMode()" style="border-color:#44ff88;color:#44ff88;">✿ BABY MODE</button>
     <button class="screen-btn" id="title-extra-btn" onclick="startExtraMode()" style="display:none;border-color:#ff88ff;color:#ff88ff;">✦ EXTRA MODE</button>
     <div class="controls-list">
       <span>Arrow Keys</span> — Move<br>
@@ -195,6 +196,7 @@ ctx.imageSmoothingEnabled = false;   // keep sprites crisp / pixel-art
 let state = 'loading';
 let extraMode = false;   // true after first clear
 let easyMode  = false;   // relaxed bullet counts & speeds
+let babyMode  = false;   // beginner mode with special rules
 let scrollY = 0;   // true after first clear
 let score=0, hiScore=100000, graze=0, power=1.0;
 let lives=3, bombs=3, frame=0, stage=1, paused=false;
@@ -231,7 +233,7 @@ let bossQuipTimer = 0;
 // ═══════════════════════════════════════════════════════════════
 function initGame() {
   score=0; graze=0; power=1.0;
-  lives=3; bombs=3; frame=0; stage=1;
+  lives = babyMode ? 5 : 3; bombs=3; frame=0; stage=1;
   invincible=0; bombActive=0; stageTimer=0; scrollY=0;
   bossActive=false;
   wavePhase=0; waveDelay=90; spawnQueue=[];
@@ -410,6 +412,19 @@ const patterns = {
     }
   }
 };
+  // Baby mode patterns
+  baby_aimed(e) {
+    const a = Math.atan2(player.y-e.y, player.x-e.x);
+    eb(e, Math.cos(a)*1.0, Math.sin(a)*1.0, '#ffaa00', 4);
+  },
+  baby_cross(e) {
+    // 4 bullets: up, down, left, right
+    [[0,-1],[0,1],[-1,0],[1,0]].forEach(([dx,dy])=>{
+      eb(e, dx*1.2, dy*1.2, '#ff88cc', 4);
+    });
+  },
+  baby_silent(e) { /* enemy_c in baby mode: no bullets */ }
+};
 // shorthand – push enemy bullet
 function eb(e, dx, dy, color, r) {
   enemyBullets.push({ x:e.x, y:e.y, dx, dy, r, color });
@@ -490,9 +505,15 @@ function spawnWave(waveIndex) {
 
 function spawnEnemy(sprKey, x, y, vx, vy, pattern, hp, sc, extra={}) {
   if (sprKey === 'enemy_c') hp = 1;  // one-hit kill
+  // Baby mode: override patterns and behaviour
+  if (babyMode) {
+    if (sprKey === 'enemy_a') pattern = 'baby_aimed';
+    if (sprKey === 'enemy_b') pattern = 'baby_cross';
+    if (sprKey === 'enemy_c') { pattern = 'baby_silent'; extra = {...extra, gravitates:true}; }
+  }
   const sizes = { enemy_a:{w:24,h:24}, enemy_b:{w:28,h:28}, enemy_c:{w:32,h:32} };
   const s = sizes[sprKey]||{w:24,h:24};
-  const initTimer = easyMode ? 120 + Math.floor(Math.random()*180) : 80;
+  const initTimer = (easyMode||babyMode) ? 120 + Math.floor(Math.random()*180) : 80;
   enemies.push({ sprKey, x, y, vx, vy, pattern, hp, maxHp:hp, score:sc,
                  w:s.w, h:s.h, shootTimer:initTimer, ...extra });
 }
@@ -503,8 +524,8 @@ function spawnEnemy(sprKey, x, y, vx, vy, pattern, hp, sc, extra={}) {
 function spawnBoss() {
   bossActive = true;
   const def = BOSS_ROSTER[(stage-1) % BOSS_ROSTER.length];
-  const baseHp = extraMode ? 6000 : easyMode ? 1200 : 3000;
-  bossMaxHp = baseHp + (easyMode ? stage*400 : stage*1200); bossHp = bossMaxHp;
+  const baseHp = extraMode ? 6000 : (easyMode||babyMode) ? 1200 : 3000;
+  bossMaxHp = baseHp + ((easyMode||babyMode) ? stage*400 : stage*1200); bossHp = bossMaxHp;
   boss = { ...def, x:W/2-def.w/2, y:30, hp:bossHp,
            targetX:W/2, targetY:60, shootTimer:0,
            moveTimer:0, spiralAngle:0, ringOffset:0 };
@@ -536,7 +557,7 @@ function bossBehavior() {
   const phase = boss.hp<bossMaxHp*0.4?2 : boss.hp<bossMaxHp*0.7?1 : 0;
   const be = { x:boss.x+boss.w/2, y:boss.y+boss.h/2, spiralAngle:boss.spiralAngle, ringOffset:boss.ringOffset };
 
-  const ti = easyMode ? 3 : 1;  // interval multiplier: easy = 3x longer gaps
+  const ti = babyMode ? 4 : easyMode ? 3 : 1;  // interval multiplier
   if (phase===0) {
     if (boss.shootTimer%(30*ti)===0) patterns.aimed(be);
     if (boss.shootTimer%(80*ti)===0) patterns.spread(be);
@@ -587,16 +608,30 @@ function bossBehavior() {
 function updateEnemies() {
   for (let i=enemies.length-1;i>=0;i--) {
     const e=enemies[i];
+    // Baby mode: enemy_c gravitates toward player
+    if (babyMode && e.gravitates) {
+      const dx = player.x - (e.x+e.w/2), dy = player.y - (e.y+e.h/2);
+      const d  = Math.sqrt(dx*dx+dy*dy) || 1;
+      e.vx += dx/d * 0.04;
+      e.vy += dy/d * 0.04;
+      // cap speed
+      const spd = Math.sqrt(e.vx*e.vx+e.vy*e.vy);
+      if (spd > 1.8) { e.vx = e.vx/spd*1.8; e.vy = e.vy/spd*1.8; }
+    }
     e.x+=e.vx; e.y+=e.vy; e.shootTimer--;
     if (e.shootTimer<=0) {
       const proxy = { x:e.x+e.w/2, y:e.y+e.h/2, spiralAngle:e.spiralAngle, ringOffset:e.ringOffset };
       const nonCircle = e.pattern==='aimed' || e.pattern==='spread';
       const tooClose  = easyMode && nonCircle && dist(player.x, player.y, proxy.x, proxy.y) < 90;
-      if (!tooClose) {
-        patterns[e.pattern](proxy);
-        if (e.pattern==='spiral') e.spiralAngle=proxy.spiralAngle;
+      // Baby mode: wave 0 (wavePhase 0-1) enemies never fire
+      const babyWave0 = babyMode && wavePhase <= 1;
+      if (!tooClose && !babyWave0) {
+        if (patterns[e.pattern]) {
+          patterns[e.pattern](proxy);
+          if (e.pattern==='spiral') e.spiralAngle=proxy.spiralAngle;
+        }
       }
-      e.shootTimer = easyMode ? 180 : Math.max(30,80-stage*5);
+      e.shootTimer = (easyMode||babyMode) ? 180 : Math.max(30,80-stage*5);
     }
     // bullet hits
     let killed = false;
@@ -690,6 +725,32 @@ function updateParticles() {
   }
 }
 
+
+// ── Pre-boss bullet string (baby mode) ────────────────────────
+// A decorative curtain of slow bullets that sweeps across the screen
+// giving the player a visible warning that the boss is coming.
+function spawnBulletString() {
+  const rows = 3;
+  const cols = 12;
+  const colors = ['#ff44aa','#ffaa00','#44ffcc'];
+  for (let r = 0; r < rows; r++) {
+    for (let c = 0; c < cols; c++) {
+      const delay = c * 8 + r * 3;
+      const rr = r, cc = c;
+      queueSpawn(delay, () => {
+        const x = (cc / (cols-1)) * (W - 20) + 10;
+        const y = -10 - rr * 18;
+        enemyBullets.push({
+          x, y,
+          dx: 0,
+          dy: 1.0 + rr * 0.2,
+          r: 5, color: colors[rr % colors.length],
+          isBulletString: true   // won't home, won't graze-score
+        });
+      });
+    }
+  }
+}
 // ── Wave state machine ─────────────────────────────────────────
 // 10 waves (phases 0-19), then pre-boss pause (20), then boss (21+)
 // Even phase = countdown to spawn; odd phase = wait for clear
@@ -713,8 +774,14 @@ function updateStage() {
       if (allClear) { waveDelay = 90; wavePhase++; }
     }
   } else if (wavePhase === 20) {
-    // short dramatic pause before boss
-    if (--waveDelay <= 0) { spawnBoss(); wavePhase = 21; }
+    // pre-boss: spawn bullet string in baby mode, then pause, then boss
+    if (waveDelay === 90) {
+      // first frame of this phase – fire the warning string if baby mode
+      if (babyMode) spawnBulletString();
+      waveDelay--;
+    } else {
+      if (--waveDelay <= 0) { spawnBoss(); wavePhase = 21; }
+    }
   }
   // wavePhase 21+ = boss fight, bossBehavior() takes over
 }
@@ -999,7 +1066,7 @@ let lastUIFrame=0;
 function updateUI() {
   document.getElementById('scoreDisplay').textContent=score.toLocaleString();
   document.getElementById('hiScoreDisplay').textContent=hiScore.toLocaleString();
-  document.getElementById('stageDisplay').textContent=(extraMode?"✦":easyMode?"☆":"")+stage;
+  document.getElementById('stageDisplay').textContent=(extraMode?"✦":easyMode?"☆":babyMode?"✿":"")+stage;
   document.getElementById('powerDisplay').textContent=power.toFixed(1);
   document.getElementById('grazeDisplay').textContent=graze;
   // lives
@@ -1067,10 +1134,25 @@ function loop() {
 // ═══════════════════════════════════════════════════════════════
 //  SCREEN TRANSITIONS
 // ═══════════════════════════════════════════════════════════════
+function startBabyMode() {
+  babyMode  = true;
+  easyMode  = false;
+  extraMode = false;
+  document.getElementById('title-screen').style.display='none';
+  document.getElementById('gameover-screen').style.display='none';
+  document.getElementById('victory-screen').style.display='none';
+  document.getElementById('boss-section').style.display='none';
+  initGame();
+  showStageBanner('✿ BABY MODE ✿');
+  state='playing';
+}
+
 function startEasyMode() {
   easyMode  = true;
   extraMode = false;
+  babyMode  = false;
   easyMode = false;
+  babyMode = false;
   document.getElementById('title-screen').style.display='none';
   document.getElementById('gameover-screen').style.display='none';
   document.getElementById('victory-screen').style.display='none';
@@ -1083,6 +1165,7 @@ function startEasyMode() {
 function startExtraMode() {
   extraMode = true;
   easyMode = false;
+  babyMode = false;
   document.getElementById('victory-screen').style.display='none';
   document.getElementById('extra-unlock-msg').style.display='none';
   document.getElementById('extra-mode-btn').style.display='none';
@@ -1095,6 +1178,7 @@ function startExtraMode() {
 function startGame() {
   extraMode = false;
   easyMode = false;
+  babyMode = false;
   document.getElementById('title-screen').style.display='none';
   document.getElementById('gameover-screen').style.display='none';
   document.getElementById('victory-screen').style.display='none';
