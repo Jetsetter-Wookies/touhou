@@ -702,17 +702,26 @@ function updateBullets() {
 function updateEnemyBullets() {
   for (let i=enemyBullets.length-1;i>=0;i--) {
     const b=enemyBullets[i];
-    // Baby mode homing: only home if bullet is moving downward (dy>0)
-    if (b.homeFrames && b.homeFrames > 0 && b.dy > 0) {
+    // Any bullet with zero speed homes toward player permanently
+    const bspd = Math.sqrt(b.dx*b.dx+b.dy*b.dy);
+    if (bspd === 0) {
+      const ha = Math.atan2(player.y-b.y, player.x-b.x);
+      b.dx += Math.cos(ha) * 0.06;
+      b.dy += Math.sin(ha) * 0.06;
+      const ns = Math.sqrt(b.dx*b.dx+b.dy*b.dy);
+      if (ns > 2.0) { b.dx=b.dx/ns*2.0; b.dy=b.dy/ns*2.0; }
+    }
+    // Baby mode homing: home if moving downward (dy>0)
+    else if (b.homeFrames && b.homeFrames > 0 && b.dy > 0) {
       b.homeFrames--;
       const ha = Math.atan2(player.y-b.y, player.x-b.x);
-      const spd = Math.sqrt(b.dx*b.dx+b.dy*b.dy) || 1.2;
+      const spd2 = bspd || 1.2;
       b.dx += Math.cos(ha) * 0.08;
       b.dy += Math.sin(ha) * 0.08;
       const ns = Math.sqrt(b.dx*b.dx+b.dy*b.dy);
-      if (ns > spd) { b.dx=b.dx/ns*spd; b.dy=b.dy/ns*spd; }
+      if (ns > spd2) { b.dx=b.dx/ns*spd2; b.dy=b.dy/ns*spd2; }
     } else if (b.homeFrames && b.homeFrames > 0) {
-      b.homeFrames--; // still count down but don't steer upward bullets
+      b.homeFrames--;
     }
     b.x+=b.dx; b.y+=b.dy;
     if (b.y>H+20||b.y<-20||b.x<-20||b.x>W+20) { enemyBullets.splice(i,1); continue; }
