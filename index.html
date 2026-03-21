@@ -169,6 +169,16 @@ const SPRITE_FILES = {
   boss_sakuya: 'assets/sprites/boss_sakuya.png',
   boss_yukari: 'assets/sprites/boss_yukari.png',
 };
+// Level palette sprites (tinted enemies per level)
+for (let lvl=1;lvl<=7;lvl++) {
+  ['enemy_a','enemy_b','enemy_c'].forEach(k=>{
+    SPRITE_FILES[`l${lvl}_${k}`] = `assets/palettes/level${lvl}/${k}.png`;
+  });
+}
+// Background images
+for (let lvl=1;lvl<=7;lvl++) {
+  SPRITE_FILES[`bg${lvl}`] = `assets/backgrounds/bg${lvl}.png`;
+}
 
 let spritesLoaded = 0;
 const totalSprites = Object.keys(SPRITE_FILES).length;
@@ -181,6 +191,13 @@ function loadSprites(callback) {
                           SPRITES[key] = null; spritesLoaded++; if (spritesLoaded === totalSprites) callback(); };
     img.src = src;
   });
+}
+
+// Return palette-tinted sprite key for current stage
+function palKey(base) {
+  const lvl = Math.min(stage, 7);
+  const pk = `l${lvl}_${base}`;
+  return (SPRITES[pk]) ? pk : base;
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -198,6 +215,7 @@ let state = 'loading';
 let extraMode = false;   // true after first clear
 let easyMode  = false;   // relaxed bullet counts & speeds
 let babyMode  = false;   // beginner mode with special rules
+let hardMode  = false;   // 7 stages
 let scrollY = 0;   // true after first clear
 let score=0, hiScore=100000, graze=0, power=1.0;
 let lives=3, bombs=3, frame=0, stage=1, paused=false;
@@ -215,19 +233,55 @@ document.addEventListener('keyup',   e=>{ keys[e.code]=false; });
 // ═══════════════════════════════════════════════════════════════
 const BOSS_ROSTER = [
   { key:'boss_reimu',  name:'博麗 霊夢  Hakurei Reimu',   w:48, h:56,
-    quip:"Don't expect me to go easy on you just because I'm the stage 1 boss." },
+    quip:"Don't expect me to go easy on you just because I'm the stage 1 boss.",
+    defeatQuip:"H-how? I didn't even get to use my full power yet..." },
   { key:'boss_marisa', name:'霧雨 魔理沙  Kirisame Marisa', w:48, h:56,
-    quip:"I borrowed some spells from a book. Don't worry about which book." },
+    quip:"I borrowed some spells from a book. Don't worry about which book.",
+    defeatQuip:"Ze~! That's my power you're using against me?! Not fair!" },
   { key:'boss_sakuya', name:'十六夜 咲夜  Izayoi Sakuya',  w:48, h:56,
-    quip:"I can stop time, so dying to my bullets is entirely your own fault." },
+    quip:"I can stop time, so dying to my bullets is entirely your own fault.",
+    defeatQuip:"...Impossible. I stopped time and you still hit me." },
   { key:'boss_yukari', name:'八雲 紫  Yakumo Yukari',      w:56, h:64,
-    quip:"Oh my. A human made it this far? How novel. How unfortunate for you." },
+    quip:"Oh my. A human made it this far? How novel. How unfortunate for you.",
+    defeatQuip:"Fufu... how delightful. I was beginning to get bored.", newFight:true },
+  { key:'boss_reimu',  name:'博麗 霊夢  Hakurei Reimu II', w:48, h:56,
+    quip:"You again? Fine. I won't hold back this time.",
+    defeatQuip:"This can't be real. You're cheating somehow.", newFight:true },
+  { key:'boss_marisa', name:'霧雨 魔理沙  Kirisame Marisa II', w:48, h:56,
+    quip:"Deep space, huh? Even here you won't escape Master Spark!",
+    defeatQuip:"ZE~! My best spell... defeated in deep space...", newFight:true,
+    teleportTaunt:"What, you think I'm just gonna sit there and take it?" },
+  { key:'boss_yukari', name:'八雲 紫  Yakumo Yukari Final', w:56, h:64,
+    quip:"You've come all this way. Let's see if you can survive the void.",
+    defeatQuip:"...You truly are something else. This gap was not meant to be crossed.",
+    newFight:true,
+    teleportTaunt:"Did you really think a gap youkai would stand still for you?" },
 ];
 
 // boss dialogue
 let bossQuip = '';
 let bossQuipSpeaker = '';
 let bossQuipTimer = 0;
+
+// background scroll
+let bgScrollY = 0;       // pixel offset into the bg image (increases downward = scroll up)
+let bgPaused  = false;   // paused during boss fight
+
+// defeat screen
+let defeatScreen = false;
+let defeatQuipText = '';
+let defeatBossKey  = '';
+let defeatBossW    = 48;
+let defeatBossH    = 56;
+let defeatScale    = 1;
+let defeatAlpha    = 0;
+let defeatPhase    = 0;  // 0=grow, 1=hold, 2=wait for Z
+
+// boss teleport dodge (stages 6+)
+let bossTeleporting   = false;
+let bossTeleportTimer = 0;
+let bossTeleportTaunt = '';
+let bossTeleportTauntTimer = 0;
 
 // ═══════════════════════════════════════════════════════════════
 //  INIT
@@ -236,6 +290,7 @@ function initGame() {
   score=0; graze=0; power=1.0;
   lives = babyMode ? 5 : 3; bombs=3; frame=0; stage=1;
   invincible=0; bombActive=0; stageTimer=0; scrollY=0;
+  bgScrollY=0; bgPaused=false; defeatScreen=false; bossTeleporting=false;
   bossActive=false;
   wavePhase=0; waveDelay=90; spawnQueue=[];
   player = { x:W/2, y:H-80, w:32, h:40, speed:4, shootCooldown:0 };
@@ -530,10 +585,12 @@ function spawnBoss() {
   bossMaxHp = (baseHp + ((easyMode||babyMode) ? stage*400 : stage*1200)) * 2; bossHp = bossMaxHp;
   boss = { ...def, x:W/2-def.w/2, y:30, hp:bossHp,
            targetX:W/2, targetY:60, shootTimer:0,
-           moveTimer:0, spiralAngle:0, ringOffset:0 };
+           moveTimer:0, spiralAngle:0, ringOffset:0,
+           fightPhase:0, fightTimer:0 };
   document.getElementById('boss-section').style.display='block';
   updateBossHp();
   showStageBanner('BOSS: '+def.name);
+  bgPaused = true;
   bossQuip = def.quip || '';
   bossQuipSpeaker = def.name.includes('  ') ? def.name.split('  ')[1] : def.name;
   bossQuipTimer = 300;
@@ -548,12 +605,66 @@ function updateBossHp() {
 function bossBehavior() {
   if (!boss) return;
   boss.moveTimer++;
-  if (boss.moveTimer%120===0) {
-    boss.targetX = 60+Math.random()*(W-120) - boss.w/2;
-    boss.targetY = 30+Math.random()*100;
+
+  // Teleport dodge on hit (stages 6+ hard/extra only)
+  if (bossTeleporting) {
+    bossTeleportTimer--;
+    if (bossTeleportTimer <= 0) { bossTeleporting = false; }
+    return; // freeze while teleporting
   }
-  boss.x += (boss.targetX-boss.x)*0.02;
-  boss.y += (boss.targetY-boss.y)*0.02;
+
+  // New fight pattern for stages 4-7
+  if (stage >= 4 && boss.newFight) {
+    // Phase: 0=enter left, 1=fire homing stream from left, 2=move to center, 3=normal
+    if (!boss.fightPhase) boss.fightPhase = 0;
+    if (!boss.fightTimer)  boss.fightTimer  = 0;
+    boss.fightTimer++;
+
+    if (boss.fightPhase === 0) {
+      // Move to left side
+      boss.targetX = 20; boss.targetY = 80;
+      boss.x += (boss.targetX - boss.x) * 0.04;
+      boss.y += (boss.targetY - boss.y) * 0.04;
+      if (Math.abs(boss.x - boss.targetX) < 4) { boss.fightPhase = 1; boss.fightTimer = 0; }
+    } else if (boss.fightPhase === 1) {
+      // Fire rapid homing bullets from left side
+      boss.x += (20 - boss.x) * 0.02;
+      boss.y += (80 - boss.y) * 0.02;
+      if (boss.fightTimer % 8 === 0 && boss.fightTimer < 240) {
+        const be = { x:boss.x+boss.w/2, y:boss.y+boss.h/2 };
+        const a = Math.atan2(player.y - be.y, player.x - be.x);
+        const spd = 3.5;
+        enemyBullets.push({ x:be.x, y:be.y,
+          dx: Math.cos(a)*spd, dy: Math.sin(a)*spd,
+          r:5, color:'#ff44ff', homing:true, homingLife:45 });
+      }
+      if (boss.fightTimer >= 260) { boss.fightPhase = 2; boss.fightTimer = 0; }
+    } else if (boss.fightPhase === 2) {
+      // Move to center
+      boss.targetX = W/2 - boss.w/2; boss.targetY = 60;
+      boss.x += (boss.targetX - boss.x) * 0.03;
+      boss.y += (boss.targetY - boss.y) * 0.03;
+      if (Math.abs(boss.x - boss.targetX) < 6) { boss.fightPhase = 3; boss.fightTimer = 0; }
+    } else {
+      // Normal attack phase
+      boss.moveTimer++;
+      if (boss.moveTimer % 120 === 0) {
+        boss.targetX = 60+Math.random()*(W-120) - boss.w/2;
+        boss.targetY = 30+Math.random()*100;
+      }
+      boss.x += (boss.targetX - boss.x) * 0.02;
+      boss.y += (boss.targetY - boss.y) * 0.02;
+      // loop back
+      if (boss.fightTimer > 400) { boss.fightPhase = 0; boss.fightTimer = 0; }
+    }
+  } else {
+    if (boss.moveTimer%120===0) {
+      boss.targetX = 60+Math.random()*(W-120) - boss.w/2;
+      boss.targetY = 30+Math.random()*100;
+    }
+    boss.x += (boss.targetX-boss.x)*0.02;
+    boss.y += (boss.targetY-boss.y)*0.02;
+  }
 
   boss.shootTimer++;
   const phase = boss.hp<bossMaxHp*0.4?2 : boss.hp<bossMaxHp*0.7?1 : 0;
@@ -577,37 +688,49 @@ function bossBehavior() {
   bossHp = boss.hp;
   updateBossHp();
 
-  if (boss.hp<=0) {
+  if (boss.hp<=0 && !defeatScreen) {
     for (let i=0;i<60;i++) spawnParticle(boss.x+boss.w/2, boss.y+boss.h/2,'#ffdd44',8);
     score += 10000*stage;
     // Drop life orb (not in extra mode)
     if (!extraMode) {
-      const dropChance = babyMode ? 1.0 : easyMode ? 0.85 : 0.5; // hard=50%, normal=85%, baby=100%
+      const dropChance = babyMode ? 1.0 : easyMode ? 0.85 : 0.5;
       if (Math.random() < dropChance) {
         items.push({ x:boss.x+(boss.w||48)/2, y:boss.y+(boss.h||56)/2, vy:0.8, type:'life' });
       }
     }
+    // Show defeat screen
+    const def2 = BOSS_ROSTER[(stage-1) % BOSS_ROSTER.length];
+    defeatQuipText = def2.defeatQuip || '...';
+    defeatBossKey  = def2.key;
+    defeatBossW    = def2.w; defeatBossH = def2.h;
+    defeatScreen   = true; defeatPhase = 0; defeatScale = 1; defeatAlpha = 0;
     bossActive=false; boss=null;
     document.getElementById('boss-section').style.display='none';
     enemyBullets=[];
 
-    if (stage>=4) {
-      state='victory';
-      document.getElementById('victory-score').textContent='SCORE: '+score.toLocaleString();
-      document.getElementById('victory-screen').style.display='flex';
-      if (score>hiScore) hiScore=score;
-      // unlock extra mode after first clear
-      if (!extraMode) {
-        document.getElementById('extra-unlock-msg').style.display='block';
-        document.getElementById('extra-mode-btn').style.display='inline-block';
-      }
-    } else {
-      stage++; stageTimer=0;
-      wavePhase=0; waveDelay=120; spawnQueue=[];
-      enemies=[]; enemyBullets=[];
-      showStageBanner('STAGE '+stage);
-      updateUI();
+    advanceAfterBoss();
+  }
+}
+
+function advanceAfterBoss() {
+  const maxStage = (hardMode || extraMode) ? 7 : 6;
+  bgPaused = false;
+  if (stage >= maxStage) {
+    state='victory';
+    document.getElementById('victory-score').textContent='SCORE: '+score.toLocaleString();
+    document.getElementById('victory-screen').style.display='flex';
+    if (score>hiScore) hiScore=score;
+    if (!extraMode) {
+      document.getElementById('extra-unlock-msg').style.display='block';
+      document.getElementById('extra-mode-btn').style.display='inline-block';
     }
+  } else {
+    stage++; stageTimer=0;
+    wavePhase=0; waveDelay=120; spawnQueue=[];
+    enemies=[]; enemyBullets=[];
+    bgPaused = false;
+    showStageBanner('STAGE '+stage);
+    updateUI();
   }
 }
 
@@ -695,6 +818,19 @@ function updateBullets() {
     if (b.y<-20||b.x<-20||b.x>W+20) { bullets.splice(i,1); continue; }
     if (bossActive&&boss && dist(b.x,b.y, boss.x+boss.w/2, boss.y+boss.h/2)<boss.w/2) {
       boss.hp-=b.dmg; bullets.splice(i,1); spawnParticle(b.x,b.y,'#ffcc44',2);
+      // Teleport dodge for stage 6+ in hard/extra mode
+      if (stage >= 6 && (hardMode||extraMode) && !bossTeleporting && Math.random() < 0.18) {
+        bossTeleporting = true;
+        bossTeleportTimer = 40;
+        boss.x = 30 + Math.random() * (W - 90);
+        boss.y = 20 + Math.random() * 100;
+        boss.targetX = boss.x; boss.targetY = boss.y;
+        const def3 = BOSS_ROSTER[(stage-1) % BOSS_ROSTER.length];
+        if (def3.teleportTaunt) {
+          bossTeleportTaunt = def3.teleportTaunt;
+          bossTeleportTauntTimer = 180;
+        }
+      }
     }
   }
 }
@@ -702,6 +838,15 @@ function updateBullets() {
 function updateEnemyBullets() {
   for (let i=enemyBullets.length-1;i>=0;i--) {
     const b=enemyBullets[i];
+    // Boss fight-phase homing bullets
+    if (b.homing && b.homingLife && b.homingLife > 0) {
+      b.homingLife--;
+      const ha2 = Math.atan2(player.y-b.y, player.x-b.x);
+      const bs2 = Math.sqrt(b.dx*b.dx+b.dy*b.dy)||1;
+      b.dx += Math.cos(ha2)*0.15; b.dy += Math.sin(ha2)*0.15;
+      const ns2 = Math.sqrt(b.dx*b.dx+b.dy*b.dy);
+      if (ns2 > bs2+1) { b.dx=b.dx/ns2*(bs2+1); b.dy=b.dy/ns2*(bs2+1); }
+    }
     // Any bullet with zero speed homes toward player permanently
     const bspd = Math.sqrt(b.dx*b.dx+b.dy*b.dy);
     if (bspd === 0) {
@@ -874,18 +1019,28 @@ const stars = Array.from({length:80},()=>({
 }));
 
 function drawBG() {
-  ctx.fillStyle='#060010'; ctx.fillRect(0,0,W,H);
-  // lane lines
-  ctx.strokeStyle='#1a0030'; ctx.lineWidth=0.5;
-  const ly = scrollY % H;
-  for(let y=ly-H;y<H;y+=40){ ctx.beginPath();ctx.moveTo(0,y);ctx.lineTo(W,y);ctx.stroke(); }
-  // stars
-  const starMult = extraMode ? 1.0 : 0.35;
-  stars.forEach(s=>{
-    s.y+=s.speed*starMult; if(s.y>H){s.y=0;s.x=Math.random()*W;}
-    ctx.fillStyle=`rgba(200,170,255,${0.4+s.b*0.6})`;
-    ctx.beginPath(); ctx.arc(s.x,s.y,s.r,0,Math.PI*2); ctx.fill();
-  });
+  // Advance bg scroll (pause during boss)
+  if (!bgPaused) bgScrollY += extraMode ? 1.4 : 0.5;
+
+  const lvl = Math.min(stage, 7);
+  const bgImg = SPRITES[`bg${lvl}`];
+  if (bgImg) {
+    const imgH = bgImg.naturalHeight;
+    // scroll loops: map bgScrollY into image coords (bottom of image = start of stage)
+    const offset = imgH - H - (bgScrollY % (imgH - H));
+    ctx.drawImage(bgImg, 0, offset, W, H, 0, 0, W, H);
+    // wrap-around seam fix
+    if (offset < 0) ctx.drawImage(bgImg, 0, 0, W, H-Math.abs(offset), 0, Math.abs(offset), W, H-Math.abs(offset));
+  } else {
+    // fallback gradient
+    ctx.fillStyle='#060010'; ctx.fillRect(0,0,W,H);
+    const starMult = extraMode ? 1.0 : 0.35;
+    stars.forEach(s=>{
+      s.y+=s.speed*starMult; if(s.y>H){s.y=0;s.x=Math.random()*W;}
+      ctx.fillStyle=`rgba(200,170,255,${0.4+s.b*0.6})`;
+      ctx.beginPath(); ctx.arc(s.x,s.y,s.r,0,Math.PI*2); ctx.fill();
+    });
+  }
 }
 
 function drawPlayer() {
@@ -968,7 +1123,8 @@ function drawEnemyBullets() {
 
 function drawEnemies() {
   enemies.forEach(e=>{
-    drawSprite(e.sprKey, e.x, e.y, e.w, e.h);
+    const sk = (e.sprKey==='enemy_a'||e.sprKey==='enemy_b'||e.sprKey==='enemy_c') ? palKey(e.sprKey) : e.sprKey;
+    drawSprite(sk, e.x, e.y, e.w, e.h);
     // HP bar
     ctx.fillStyle='#330022'; ctx.fillRect(e.x, e.y+e.h+2, e.w, 3);
     ctx.fillStyle='#ff0044'; ctx.fillRect(e.x, e.y+e.h+2, e.w*(e.hp/e.maxHp), 3);
@@ -1131,6 +1287,94 @@ function drawBossQuip() {
 
   ctx.restore();
 }
+
+function updateDefeatScreen() {
+  if (!defeatScreen) return;
+  if (defeatPhase === 0) {
+    defeatAlpha = Math.min(1, defeatAlpha + 0.03);
+    defeatScale = Math.min(2.5, defeatScale + 0.04);
+    if (defeatScale >= 2.5) { defeatPhase = 1; }
+  } else if (defeatPhase === 1) {
+    // hold – wait for Z press
+  }
+  // Z press to continue
+  if (defeatPhase >= 1 && keys['KeyZ']) {
+    keys['KeyZ'] = false;
+    defeatScreen = false;
+    advanceAfterBoss();
+  }
+}
+
+function drawDefeatScreen() {
+  if (!defeatScreen) return;
+  // dim overlay
+  ctx.fillStyle = `rgba(0,0,0,${defeatAlpha * 0.75})`;
+  ctx.fillRect(0,0,W,H);
+
+  // boss sprite scaled up
+  const img = SPRITES[defeatBossKey];
+  const dw = defeatBossW * defeatScale;
+  const dh = defeatBossH * defeatScale;
+  const dx = W/2 - dw/2;
+  const dy = H/2 - dh/2 - 30;
+  ctx.save();
+  ctx.globalAlpha = defeatAlpha;
+  ctx.imageSmoothingEnabled = true;
+  if (img) ctx.drawImage(img, dx, dy, dw, dh);
+  ctx.imageSmoothingEnabled = false;
+
+  // defeat quip bubble
+  if (defeatPhase >= 1) {
+    const pad = 12, maxW = 300;
+    ctx.font = '12px "Noto Serif JP"';
+    const words = defeatQuipText.split(' ');
+    const lines = []; let cur = '';
+    for (const w of words) {
+      const test = cur ? cur+' '+w : w;
+      if (ctx.measureText(test).width > maxW-pad*2) { lines.push(cur); cur=w; }
+      else cur=test;
+    }
+    if (cur) lines.push(cur);
+    const lineH=18, boxH=lines.length*lineH+pad*2+16;
+    const bx=W/2-maxW/2, by=dy+dh+8;
+    ctx.globalAlpha = defeatAlpha;
+    ctx.fillStyle='#0a0018'; ctx.strokeStyle='#cc44ff'; ctx.lineWidth=2;
+    ctx.beginPath(); ctx.roundRect(bx,by,maxW,boxH,8); ctx.fill(); ctx.stroke();
+    // triangle pointer
+    ctx.fillStyle='#0a0018';
+    ctx.beginPath(); ctx.moveTo(W/2-8,by); ctx.lineTo(W/2+8,by); ctx.lineTo(W/2,by-10); ctx.closePath(); ctx.fill();
+    ctx.strokeStyle='#cc44ff'; ctx.lineWidth=1.5;
+    ctx.beginPath(); ctx.moveTo(W/2-8,by-1); ctx.lineTo(W/2,by-10); ctx.lineTo(W/2+8,by-1); ctx.stroke();
+    ctx.fillStyle='#e8d0ff'; ctx.font='12px "Noto Serif JP"'; ctx.textAlign='left';
+    lines.forEach((ln,i)=> ctx.fillText(ln, bx+pad, by+pad+12+i*lineH));
+    // press Z prompt
+    ctx.fillStyle=`rgba(200,180,255,${0.5+0.5*Math.sin(frame*0.1)})`;
+    ctx.font='11px "Noto Serif JP"'; ctx.textAlign='center';
+    ctx.fillText('Press Z to continue', W/2, by+boxH+16);
+  }
+  ctx.restore();
+}
+
+function drawTeleportTaunt() {
+  if (bossTeleportTauntTimer <= 0) return;
+  bossTeleportTauntTimer--;
+  const alpha = bossTeleportTauntTimer < 40 ? bossTeleportTauntTimer/40 : 1;
+  const pad=10, maxW=260;
+  ctx.save();
+  ctx.font='11px "Noto Serif JP"';
+  const words=bossTeleportTaunt.split(' '); const lines=[]; let cur='';
+  for(const w of words){const t=cur?cur+' '+w:w; if(ctx.measureText(t).width>maxW-pad*2){lines.push(cur);cur=w;}else cur=t;}
+  if(cur) lines.push(cur);
+  const bh=lines.length*16+pad*2+4;
+  const bx=W/2-maxW/2, by=10;
+  ctx.globalAlpha=alpha*0.95;
+  ctx.fillStyle='#0a0018'; ctx.strokeStyle='#ff44ff'; ctx.lineWidth=1.5;
+  ctx.beginPath(); ctx.roundRect(bx,by,maxW,bh,6); ctx.fill(); ctx.stroke();
+  ctx.fillStyle='#ffaaff'; ctx.textAlign='left';
+  lines.forEach((ln,i)=>ctx.fillText(ln,bx+pad,by+pad+12+i*16));
+  ctx.restore();
+}
+
 function drawHUD() {
   ctx.fillStyle='rgba(180,120,255,0.25)';
   ctx.font='10px "Noto Serif JP"';
@@ -1186,6 +1430,7 @@ function loop() {
   if (invincible>0) invincible--;
   if (bombActive>0) bombActive--;
 
+  if (defeatScreen) { updateDefeatScreen(); drawBG(); drawDefeatScreen(); return; }
   handleInput();
   updateOrbs();
   updateHomingBullets();
@@ -1206,6 +1451,8 @@ function loop() {
   drawBullets();
   drawPlayer();
   drawBossQuip();
+  drawTeleportTaunt();
+  drawDefeatScreen();
   drawHUD();
 
   if (frame-lastUIFrame>10) { updateUI(); lastUIFrame=frame; }
@@ -1218,6 +1465,7 @@ function startBabyMode() {
   babyMode  = true;
   easyMode  = false;
   extraMode = false;
+  hardMode  = false;
   document.getElementById('title-screen').style.display='none';
   document.getElementById('gameover-screen').style.display='none';
   document.getElementById('victory-screen').style.display='none';
@@ -1231,6 +1479,7 @@ function startEasyMode() {
   easyMode  = true;
   extraMode = false;
   babyMode  = false;
+  hardMode  = false;
   easyMode = false;
   babyMode = false;
   document.getElementById('title-screen').style.display='none';
@@ -1246,6 +1495,7 @@ function startExtraMode() {
   extraMode = true;
   easyMode = false;
   babyMode = false;
+  hardMode = false;
   document.getElementById('victory-screen').style.display='none';
   document.getElementById('extra-unlock-msg').style.display='none';
   document.getElementById('extra-mode-btn').style.display='none';
@@ -1259,6 +1509,7 @@ function startGame() {
   extraMode = false;
   easyMode = false;
   babyMode = false;
+  hardMode = true;
   document.getElementById('title-screen').style.display='none';
   document.getElementById('gameover-screen').style.display='none';
   document.getElementById('victory-screen').style.display='none';
