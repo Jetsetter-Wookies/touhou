@@ -121,7 +121,8 @@
     <button class="screen-btn" onclick="startGame()" style="border-color:#ff4444;color:#ff4444;">▶ HARD MODE</button>
     <button class="screen-btn" onclick="startEasyMode()" style="border-color:#ffdd44;color:#ffdd44;">☆ NORMAL MODE</button>
     <button class="screen-btn" onclick="startBabyMode()" style="border-color:#44ff88;color:#44ff88;">✿ BABY MODE</button>
-    <button class="screen-btn" id="title-extra-btn" onclick="startExtraMode()" style="display:none;border-color:#ff88ff;color:#ff88ff;">✦ EXTRA MODE</button>
+    <button class="screen-btn" onclick="openMusicRoom()" style="border-color:#44ccff;color:#44ccff;">♪ MUSIC ROOM</button>
+    <button class="screen-btn" id="title-extra-btn" onclick="startTrueMode()" style="display:none;border-color:#ff88ff;color:#ff88ff;">★ TRUE MODE</button>
     <div class="controls-list">
       <span>Arrow Keys</span> — Move<br>
       <span>Z</span> — Shoot &nbsp;&nbsp; <span>X</span> — Bomb<br>
@@ -144,12 +145,23 @@
     <div class="screen-title-jp">クリア！</div>
     <div style="font-size:14px;color:#ffcc44;margin-bottom:6px;">ALL CLEAR</div>
     <div id="victory-score" style="font-size:20px;color:#fff;margin-bottom:16px;"></div>
-    <div id="extra-unlock-msg" style="font-size:11px;color:#ff88ff;letter-spacing:2px;margin-bottom:14px;display:none;">✦ EXTRA STAGE UNLOCKED ✦</div>
-    <button class="screen-btn" id="extra-mode-btn" onclick="startExtraMode()" style="display:none;border-color:#ff88ff;color:#ff88ff;">✦ EXTRA MODE</button>
+    <div id="extra-unlock-msg" style="font-size:11px;color:#ff88ff;letter-spacing:2px;margin-bottom:14px;display:none;">★ TRUE MODE UNLOCKED ★</div>
+    <button class="screen-btn" id="extra-mode-btn" onclick="startTrueMode()" style="display:none;border-color:#ff88ff;color:#ff88ff;">★ TRUE MODE</button>
     <button class="screen-btn" onclick="startGame()">▶ PLAY AGAIN</button>
     <button class="screen-btn" onclick="showTitle()">TITLE</button>
   </div>
 
+
+  <!-- Music Room -->
+  <div id="music-room" style="display:none;position:absolute;top:0;left:0;width:544px;height:448px;
+       background:#060010ee;z-index:10;color:#e0c0ff;font-family:'Noto Serif JP',serif;
+       flex-direction:column;align-items:center;padding:16px 20px;box-sizing:border-box;">
+    <div style="font-size:13px;color:#cc44ff;letter-spacing:3px;margin-bottom:6px;">♪ MUSIC ROOM ♪</div>
+    <div style="font-size:10px;color:#7755aa;margin-bottom:14px;letter-spacing:1px;">Select a track to preview</div>
+    <div id="mr-tracklist" style="width:100%;flex:1;overflow-y:auto;display:flex;flex-direction:column;gap:4px;"></div>
+    <div id="mr-nowplaying" style="margin-top:10px;font-size:11px;color:#aa66dd;min-height:16px;text-align:center;"></div>
+    <button class="screen-btn" onclick="closeMusicRoom()" style="margin-top:10px;font-size:12px;">← BACK</button>
+  </div>
   <div id="stage-banner"></div>
 </div>
 
@@ -213,7 +225,8 @@ ctx.imageSmoothingEnabled = false;   // keep sprites crisp / pixel-art
 //  STATE
 // ═══════════════════════════════════════════════════════════════
 let state = 'loading';
-let extraMode = false;   // true after first clear
+let trueMode  = false;   // unlocked after beating hard mode
+let hardCleared = false; // set when hard mode stage 7 cleared
 let easyMode  = false;   // relaxed bullet counts & speeds
 let babyMode  = false;   // beginner mode with special rules
 let hardMode  = false;   // 7 stages
@@ -590,7 +603,7 @@ function spawnEnemy(sprKey, x, y, vx, vy, pattern, hp, sc, extra={}) {
 function spawnBoss() {
   bossActive = true;
   const def = BOSS_ROSTER[(stage-1) % BOSS_ROSTER.length];
-  const baseHp = extraMode ? 6000 : (easyMode||babyMode) ? 1200 : 3000;
+  const baseHp = trueMode ? 6000 : (easyMode||babyMode) ? 1200 : 3000;
   bossMaxHp = (baseHp + ((easyMode||babyMode) ? stage*400 : stage*1200)) * 2; bossHp = bossMaxHp;
   boss = { ...def, x:W/2-def.w/2, y:30, hp:bossHp,
            targetX:W/2, targetY:60, shootTimer:0,
@@ -805,7 +818,7 @@ function bossBehavior() {
     for (let i=0;i<60;i++) spawnParticle(boss.x+boss.w/2, boss.y+boss.h/2,'#ffdd44',8);
     score += 10000*stage;
     // Drop life orb (not in extra mode)
-    if (!extraMode) {
+    if (!trueMode) {
       const dropChance = babyMode ? 1.0 : easyMode ? 0.85 : 0.5;
       if (Math.random() < dropChance) {
         items.push({ x:boss.x+(boss.w||48)/2, y:boss.y+(boss.h||56)/2, vy:0.8, type:'life' });
@@ -825,7 +838,7 @@ function bossBehavior() {
 }
 
 function advanceAfterBoss() {
-  const maxStage = (hardMode || extraMode) ? 7 : 6;
+  const maxStage = (hardMode || trueMode) ? 7 : 6;
   bgPaused = false;
   if (stage >= maxStage) {
     musicOnVictory();
@@ -833,7 +846,9 @@ function advanceAfterBoss() {
     document.getElementById('victory-score').textContent='SCORE: '+score.toLocaleString();
     document.getElementById('victory-screen').style.display='flex';
     if (score>hiScore) hiScore=score;
-    if (!extraMode) {
+    // Hard mode clear → unlock True Mode
+    if (hardMode && !trueMode) {
+      hardCleared = true;
       document.getElementById('extra-unlock-msg').style.display='block';
       document.getElementById('extra-mode-btn').style.display='inline-block';
     }
@@ -909,7 +924,7 @@ function updateEnemies() {
         if (e.hp<=0) {
           score+=e.score*stage;
           for(let p=0;p<10;p++) spawnParticle(e.x+e.w/2,e.y+e.h/2,'#44ffcc',4);
-          if (extraMode) {
+          if (trueMode) {
             const r = Math.random();
             if (r < 0.3)       items.push({x:e.x+e.w/2,y:e.y+e.h/2,vy:1,type:'power'});
             else if (r < 0.8)  items.push({x:e.x+e.w/2,y:e.y+e.h/2,vy:1,type:'point'});
@@ -935,7 +950,7 @@ function updateBullets() {
     if (bossActive&&boss && dist(b.x,b.y, boss.x+boss.w/2, boss.y+boss.h/2)<boss.w/2) {
       boss.hp-=b.dmg; bullets.splice(i,1); spawnParticle(b.x,b.y,'#ffcc44',2);
       // Teleport dodge for stage 6+ in hard/extra mode
-      if (stage >= 6 && (hardMode||extraMode) && !bossTeleporting && Math.random() < 0.18) {
+      if (stage >= 6 && (hardMode||trueMode) && !bossTeleporting && Math.random() < 0.18) {
         bossTeleporting = true;
         bossTeleportTimer = 40;
         boss.x = 30 + Math.random() * (W - 90);
@@ -1157,7 +1172,7 @@ function drawBG() {
   } else {
     // fallback
     ctx.fillStyle='#060010'; ctx.fillRect(0,0,W,H);
-    const starMult = extraMode ? 1.0 : 0.35;
+    const starMult = trueMode ? 1.0 : 0.35;
     stars.forEach(s=>{
       s.y+=s.speed*starMult; if(s.y>H){s.y=0;s.x=Math.random()*W;}
       ctx.fillStyle=`rgba(200,170,255,${0.4+s.b*0.6})`;
@@ -1549,7 +1564,7 @@ function loop() {
     return;
   }
   frame++;
-  scrollY += extraMode ? 2 : 0.6;  // fractional scroll accumulator
+  scrollY += trueMode ? 2 : 0.6;  // fractional scroll accumulator
   if (invincible>0) invincible--;
   if (bombActive>0) bombActive--;
 
@@ -1613,7 +1628,7 @@ function startBabyMode() {
   // music hook added below via initGame trigger
   babyMode  = true;
   easyMode  = false;
-  extraMode = false;
+  trueMode = false;
   hardMode  = false;
   document.getElementById('title-screen').style.display='none';
   document.getElementById('gameover-screen').style.display='none';
@@ -1627,7 +1642,7 @@ function startBabyMode() {
 function startEasyMode() {
   // music hook added below via initGame trigger
   easyMode  = true;
-  extraMode = false;
+  trueMode = false;
   babyMode  = false;
   hardMode  = false;
   easyMode = false;
@@ -1641,9 +1656,9 @@ function startEasyMode() {
   state='playing';
 }
 
-function startExtraMode() {
+function startTrueMode() {
   // music hook added below via initGame trigger
-  extraMode = true;
+  trueMode = true;
   easyMode = false;
   babyMode = false;
   hardMode = false;
@@ -1652,15 +1667,16 @@ function startExtraMode() {
   document.getElementById('extra-mode-btn').style.display='none';
   document.getElementById('boss-section').style.display='none';
   initGame();
-  showStageBanner('✦ EXTRA MODE ✦');
+  showStageBanner('★ TRUE MODE ✦');
   state='playing';
 }
 
 function startGame() {
-  extraMode = false;
+  trueMode = false;
   easyMode = false;
   babyMode = false;
   hardMode = true;
+  // hardCleared persists – don't reset
   document.getElementById('title-screen').style.display='none';
   document.getElementById('gameover-screen').style.display='none';
   document.getElementById('victory-screen').style.display='none';
@@ -1674,7 +1690,7 @@ function showTitle() {
   document.getElementById('title-screen').style.display='flex';
   if (_musicStarted) musicOnTitle();
   const eb = document.getElementById('title-extra-btn');
-  if (eb) eb.style.display = extraMode || document.getElementById('extra-mode-btn').style.display==='inline-block' ? 'inline-block' : 'none';
+  if (eb) eb.style.display = hardCleared ? 'inline-block' : 'none';
   state='title';
 }
 
@@ -1796,6 +1812,99 @@ function musicOnBossDefeated(nextStageNum) {
 }
 function musicOnVictory() {
   MusicPlayer.fadeOut(1500);
+}
+
+
+// ═══════════════════════════════════════════════════════════════
+//  MUSIC ROOM
+// ═══════════════════════════════════════════════════════════════
+const MUSIC_TRACKS = [
+  { id:'title',   label:'Title Screen',        src:'assets/music/title/title.mp3',      locked:false },
+  { id:'s1_stage',label:'Stage 1 - Grassy Fields', src:'assets/music/level 1/stage.mp3', locked:false },
+  { id:'s1_boss', label:'Stage 1 Boss - Hakurei Reimu', src:'assets/music/level 1/boss.mp3', locked:false },
+  { id:'s2_stage',label:'Stage 2 - Ocean Crossing', src:'assets/music/level 2/stage.mp3', locked:false },
+  { id:'s2_boss', label:'Stage 2 Boss - Kirisame Marisa', src:'assets/music/level 2/boss.mp3', locked:false },
+  { id:'s3_stage',label:'Stage 3 - Desert Winds', src:'assets/music/level 3/stage.mp3', locked:false },
+  { id:'s3_boss', label:'Stage 3 Boss - Cirno', src:'assets/music/level 3/boss.mp3', locked:false },
+  { id:'s4_stage',label:'Stage 4 - Above the Clouds', src:'assets/music/level 4/stage.mp3', locked:false },
+  { id:'s4_boss', label:'Stage 4 Boss - Yakumo Yukari', src:'assets/music/level 4/boss.mp3', locked:false },
+  { id:'s5_stage',label:'Stage 5 - Leaving Earth', src:'assets/music/level 5/stage.mp3', locked:false },
+  { id:'s5_boss', label:'Stage 5 Boss - Hakurei Reimu II', src:'assets/music/level 5/boss.mp3', locked:false },
+  { id:'s6_stage',label:'Stage 6 - Deep Space', src:'assets/music/level 6/stage.mp3', locked:false },
+  { id:'s6_boss', label:'Stage 6 Boss - Izayoi Sakuya', src:'assets/music/level 6/boss.mp3', locked:false },
+  { id:'s7_stage',label:'??? - ???',             src:'assets/music/level 7/stage.mp3', locked:true },
+  { id:'s7_boss', label:'??? - ???',             src:'assets/music/level 7/boss.mp3',  locked:true },
+];
+
+let mrCurrentAudio = null;
+let mrCurrentId    = null;
+
+function isMrTrackUnlocked(track) {
+  if (!track.locked) return true;
+  return hardCleared; // level 7 tracks unlock after hard mode clear
+}
+
+function buildMusicRoomList() {
+  const list = document.getElementById('mr-tracklist');
+  list.innerHTML = '';
+  MUSIC_TRACKS.forEach(track => {
+    const unlocked = isMrTrackUnlocked(track);
+    const btn = document.createElement('button');
+    btn.style.cssText = `
+      background:none; border:1px solid ${unlocked ? '#553377' : '#2a1a3a'};
+      color:${unlocked ? '#e0c0ff' : '#443355'};
+      font-family:'Noto Serif JP',serif; font-size:11px;
+      padding:7px 10px; cursor:${unlocked ? 'pointer' : 'default'};
+      text-align:left; border-radius:3px;
+      transition:background 0.1s;
+    `;
+    const isPlaying = mrCurrentId === track.id;
+    btn.textContent = (isPlaying ? '▶ ' : '   ') + (unlocked ? track.label : '???');
+    if (unlocked) {
+      btn.onmouseover = ()=>{ btn.style.background='#2a0044'; };
+      btn.onmouseout  = ()=>{ btn.style.background='none'; };
+      btn.onclick = ()=> playMusicRoomTrack(track);
+    }
+    list.appendChild(btn);
+  });
+}
+
+function playMusicRoomTrack(track) {
+  if (mrCurrentAudio) {
+    mrCurrentAudio.pause();
+    mrCurrentAudio.currentTime = 0;
+    mrCurrentAudio = null;
+  }
+  mrCurrentId = track.id;
+  const audio = new Audio(track.src);
+  audio.loop = true;
+  audio.volume = 0.75;
+  audio.play().catch(()=>{});
+  mrCurrentAudio = audio;
+  document.getElementById('mr-nowplaying').textContent = '♪ Now playing: ' + track.label;
+  buildMusicRoomList(); // refresh to show ▶ indicator
+}
+
+function openMusicRoom() {
+  // Pause game music while in music room
+  MusicPlayer.fadeOut(400);
+  const el = document.getElementById('music-room');
+  el.style.display = 'flex';
+  buildMusicRoomList();
+}
+
+function closeMusicRoom() {
+  // Stop music room audio
+  if (mrCurrentAudio) {
+    mrCurrentAudio.pause();
+    mrCurrentAudio.currentTime = 0;
+    mrCurrentAudio = null;
+  }
+  mrCurrentId = null;
+  document.getElementById('music-room').style.display = 'none';
+  document.getElementById('mr-nowplaying').textContent = '';
+  // Resume title music
+  if (state === 'title') musicOnTitle();
 }
 
 </script>
