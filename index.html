@@ -1,0 +1,763 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>東方幻夢郷 ~ Phantasmal Dream Land</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Noto+Serif+JP:wght@400;700&display=swap');
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body {
+    background:#0a0010;
+    display:flex; justify-content:center; align-items:center;
+    min-height:100vh;
+    font-family:'Noto Serif JP',serif;
+    overflow:hidden;
+  }
+  #wrapper { display:flex; position:relative; }
+  #gameCanvas {
+    display:block;
+    border:2px solid #cc44ff;
+    box-shadow:0 0 20px #aa00ff88, 0 0 60px #440066;
+    image-rendering:pixelated;
+  }
+  #sidebar {
+    width:160px; background:#0d0018;
+    border:2px solid #cc44ff; border-left:none;
+    padding:12px 10px;
+    display:flex; flex-direction:column; gap:14px;
+    color:#e0c0ff;
+  }
+  .side-label {
+    font-size:10px; color:#aa66dd; letter-spacing:2px;
+    text-transform:uppercase; border-bottom:1px solid #440066;
+    padding-bottom:4px; margin-bottom:6px;
+  }
+  .side-value { font-size:18px; color:#ffffff; font-weight:700; letter-spacing:1px; }
+  .lives-display,.bombs-display { display:flex; gap:4px; flex-wrap:wrap; }
+  .life-icon  { width:12px; height:12px; background:#ff44aa;
+                clip-path:polygon(50% 0%,61% 35%,98% 35%,68% 57%,79% 91%,50% 70%,21% 91%,32% 57%,2% 35%,39% 35%); }
+  .life-empty { background:#331133; }
+  .bomb-icon  { width:10px; height:10px; background:#44aaff; border-radius:50%; border:1px solid #88ccff; }
+  .bomb-empty { background:#1a2233; border-color:#334; }
+  #boss-hp-bar {
+    width:100%; height:6px; background:#220033;
+    border:1px solid #660099; margin-top:4px; display:none;
+  }
+  #boss-hp-fill { height:100%; background:linear-gradient(90deg,#ff0066,#ff66cc); transition:width .1s; }
+
+  /* ── Overlays ── */
+  #title-screen,#gameover-screen,#victory-screen {
+    position:absolute; top:0; left:0; width:384px; height:448px;
+    background:#060010ee;
+    display:flex; flex-direction:column; align-items:center; justify-content:center;
+    color:#e0c0ff; text-align:center; z-index:10;
+  }
+  .screen-title-jp { font-size:26px; color:#ffffff; font-weight:700; margin-bottom:6px; text-shadow:0 0 10px #aa44ff; }
+  .screen-sub { font-size:11px; color:#9966bb; margin-bottom:30px; letter-spacing:2px; }
+  .screen-btn {
+    background:none; border:1px solid #cc44ff; color:#e0c0ff;
+    font-family:'Noto Serif JP',serif; font-size:13px;
+    padding:8px 24px; cursor:pointer; letter-spacing:3px; margin:4px;
+    transition:all .15s;
+  }
+  .screen-btn:hover { background:#cc44ff22; color:#fff; }
+  .controls-list { font-size:11px; color:#7755aa; line-height:2; margin-top:16px; }
+  .controls-list span { color:#bb88ee; }
+  #stage-banner {
+    position:absolute; top:50%; left:50%; transform:translate(-50%,-50%);
+    color:#fff; font-size:22px; font-weight:700; text-align:center;
+    pointer-events:none; z-index:5;
+    text-shadow:0 0 10px #ff44aa;
+    opacity:0; transition:opacity .3s; white-space:nowrap;
+  }
+</style>
+</head>
+<body>
+<div id="wrapper">
+  <canvas id="gameCanvas" width="384" height="448"></canvas>
+
+  <div id="sidebar">
+    <div class="side-section">
+      <div class="side-label">SCORE</div>
+      <div class="side-value" id="scoreDisplay">0</div>
+    </div>
+    <div class="side-section">
+      <div class="side-label">HI-SCORE</div>
+      <div class="side-value" id="hiScoreDisplay">100000</div>
+    </div>
+    <div class="side-section">
+      <div class="side-label">STAGE</div>
+      <div class="side-value" id="stageDisplay">1</div>
+    </div>
+    <div class="side-section">
+      <div class="side-label">LIVES</div>
+      <div class="lives-display" id="livesDisplay"></div>
+    </div>
+    <div class="side-section">
+      <div class="side-label">BOMBS</div>
+      <div class="bombs-display" id="bombsDisplay"></div>
+    </div>
+    <div class="side-section" id="boss-section" style="display:none">
+      <div class="side-label">BOSS HP</div>
+      <div id="boss-hp-bar"><div id="boss-hp-fill"></div></div>
+    </div>
+    <div class="side-section" style="margin-top:auto">
+      <div class="side-label">POWER</div>
+      <div class="side-value" id="powerDisplay">1.0</div>
+    </div>
+    <div class="side-section">
+      <div class="side-label">GRAZE</div>
+      <div class="side-value" id="grazeDisplay">0</div>
+    </div>
+  </div>
+
+  <!-- Title -->
+  <div id="title-screen">
+    <div style="font-size:13px;color:#cc88ff;letter-spacing:4px;margin-bottom:4px;">PHANTASM ENTERTAINMENT PRESENTS</div>
+    <div class="screen-title-jp">東方幻夢郷</div>
+    <div style="font-size:14px;color:#cc88ff;margin-bottom:4px;">~ Phantasmal Dream Land ~</div>
+    <div class="screen-sub">幻の夢の国へ</div>
+    <button class="screen-btn" onclick="startGame()">▶ START GAME</button>
+    <div class="controls-list">
+      <span>Arrow Keys</span> — Move<br>
+      <span>Z</span> — Shoot &nbsp;&nbsp; <span>X</span> — Bomb<br>
+      <span>Shift</span> — Focus (slow + hitbox)<br>
+      <span>ESC</span> — Pause
+    </div>
+  </div>
+
+  <!-- Game Over -->
+  <div id="gameover-screen" style="display:none">
+    <div class="screen-title-jp">ゲームオーバー</div>
+    <div style="font-size:14px;color:#cc88ff;margin-bottom:20px;">GAME OVER</div>
+    <div id="final-score" style="font-size:20px;color:#fff;margin-bottom:20px;"></div>
+    <button class="screen-btn" onclick="startGame()">▶ RETRY</button>
+    <button class="screen-btn" onclick="showTitle()">TITLE</button>
+  </div>
+
+  <!-- Victory -->
+  <div id="victory-screen" style="display:none">
+    <div class="screen-title-jp">クリア！</div>
+    <div style="font-size:14px;color:#ffcc44;margin-bottom:20px;">ALL CLEAR</div>
+    <div id="victory-score" style="font-size:20px;color:#fff;margin-bottom:20px;"></div>
+    <button class="screen-btn" onclick="startGame()">▶ PLAY AGAIN</button>
+    <button class="screen-btn" onclick="showTitle()">TITLE</button>
+  </div>
+
+  <div id="stage-banner"></div>
+</div>
+
+<script>
+// ═══════════════════════════════════════════════════════════════
+//  SPRITE LOADER
+//  All images live in assets/sprites/ next to this HTML file.
+// ═══════════════════════════════════════════════════════════════
+const SPRITES = {};
+const SPRITE_FILES = {
+  player:      'assets/sprites/player.png',
+  enemy_a:     'assets/sprites/enemy_a.png',
+  enemy_b:     'assets/sprites/enemy_b.png',
+  enemy_c:     'assets/sprites/enemy_c.png',
+  boss_reimu:  'assets/sprites/boss_reimu.png',
+  boss_marisa: 'assets/sprites/boss_marisa.png',
+  boss_sakuya: 'assets/sprites/boss_sakuya.png',
+  boss_yukari: 'assets/sprites/boss_yukari.png',
+};
+
+let spritesLoaded = 0;
+const totalSprites = Object.keys(SPRITE_FILES).length;
+
+function loadSprites(callback) {
+  Object.entries(SPRITE_FILES).forEach(([key, src]) => {
+    const img = new Image();
+    img.onload  = () => { SPRITES[key] = img; spritesLoaded++; if (spritesLoaded === totalSprites) callback(); };
+    img.onerror = () => { console.warn('Missing sprite:', src, '– using fallback');
+                          SPRITES[key] = null; spritesLoaded++; if (spritesLoaded === totalSprites) callback(); };
+    img.src = src;
+  });
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  CANVAS SETUP
+// ═══════════════════════════════════════════════════════════════
+const canvas = document.getElementById('gameCanvas');
+const ctx    = canvas.getContext('2d');
+const W = canvas.width, H = canvas.height;
+ctx.imageSmoothingEnabled = false;   // keep sprites crisp / pixel-art
+
+// ═══════════════════════════════════════════════════════════════
+//  STATE
+// ═══════════════════════════════════════════════════════════════
+let state = 'loading';
+let score=0, hiScore=100000, graze=0, power=1.0;
+let lives=3, bombs=3, frame=0, stage=1, paused=false;
+let invincible=0, bombActive=0, stageTimer=0;
+
+let player, bullets, enemies, enemyBullets, particles, items, boss;
+let bossActive=false, bossMaxHp=1000, bossHp=1000;
+
+const keys = {};
+document.addEventListener('keydown', e=>{ keys[e.code]=true;  e.preventDefault(); });
+document.addEventListener('keyup',   e=>{ keys[e.code]=false; });
+
+// ═══════════════════════════════════════════════════════════════
+//  BOSS ROSTER  (maps stage → sprite key + display name)
+// ═══════════════════════════════════════════════════════════════
+const BOSS_ROSTER = [
+  { key:'boss_reimu',  name:'博麗 霊夢  Hakurei Reimu',  w:48, h:56 },
+  { key:'boss_marisa', name:'霧雨 魔理沙  Kirisame Marisa', w:48, h:56 },
+  { key:'boss_sakuya', name:'十六夜 咲夜  Izayoi Sakuya',  w:48, h:56 },
+  { key:'boss_yukari', name:'八雲 紫  Yakumo Yukari',     w:56, h:64 },
+];
+
+// ═══════════════════════════════════════════════════════════════
+//  INIT
+// ═══════════════════════════════════════════════════════════════
+function initGame() {
+  score=0; graze=0; power=1.0;
+  lives=3; bombs=3; frame=0; stage=1;
+  invincible=0; bombActive=0; stageTimer=0;
+  bossActive=false;
+  player = { x:W/2, y:H-80, w:32, h:40, speed:4, shootCooldown:0 };
+  bullets=[]; enemies=[]; enemyBullets=[]; particles=[]; items=[]; boss=null;
+  updateUI();
+  showStageBanner('STAGE 1');
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  HELPERS
+// ═══════════════════════════════════════════════════════════════
+const dist = (x1,y1,x2,y2) => Math.sqrt((x1-x2)**2+(y1-y2)**2);
+
+function showStageBanner(text) {
+  const el = document.getElementById('stage-banner');
+  el.textContent = text; el.style.opacity = 1;
+  setTimeout(()=>{ el.style.opacity=0; }, 2200);
+}
+
+// Draw a sprite (or a coloured fallback rectangle)
+function drawSprite(key, x, y, w, h, alpha=1, angle=0) {
+  const img = SPRITES[key];
+  ctx.save();
+  ctx.globalAlpha = alpha;
+  ctx.translate(x + w/2, y + h/2);
+  if (angle) ctx.rotate(angle);
+  if (img) {
+    ctx.drawImage(img, -w/2, -h/2, w, h);
+  } else {
+    // coloured fallback so the game still works without image files
+    const fallbackColors = {
+      player:'#ff4488', enemy_a:'#44ccff', enemy_b:'#ffaa44',
+      enemy_c:'#44ffcc', boss_reimu:'#ff2266', boss_marisa:'#ffcc00',
+      boss_sakuya:'#aabbff', boss_yukari:'#cc66ff',
+    };
+    ctx.fillStyle = fallbackColors[key] || '#ffffff';
+    ctx.fillRect(-w/2, -h/2, w, h);
+  }
+  ctx.restore();
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  SHOOTING
+// ═══════════════════════════════════════════════════════════════
+function playerShoot() {
+  const opts = [{ dx:0, speed:12 }];
+  if (power>=1.5) opts.push({ dx:-6, speed:11 },{ dx:6, speed:11 });
+  if (power>=2.5) opts.push({ dx:-12, speed:10 },{ dx:12, speed:10 });
+  if (power>=3.5) opts.push({ dx:-3, speed:12 },{ dx:3, speed:12 });
+  opts.forEach(o => bullets.push({
+    x: player.x + o.dx, y: player.y-14,
+    dx: o.dx*0.1, dy: -o.speed,
+    w:3, h:8, dmg:10
+  }));
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  BULLET PATTERNS
+// ═══════════════════════════════════════════════════════════════
+const patterns = {
+  spread(e) {
+    const n = 5+stage;
+    for (let i=0;i<n;i++) {
+      const a = (Math.PI/(n-1))*i + Math.PI*0.1;
+      eb(e, Math.cos(a)*2.5, Math.sin(a)*2.5, '#ff2266', 4);
+    }
+  },
+  aimed(e) {
+    const a = Math.atan2(player.y-e.y, player.x-e.x);
+    const sp = 3+stage*0.3;
+    for (let i=-1;i<=1;i++) eb(e, Math.cos(a+i*0.2)*sp, Math.sin(a+i*0.2)*sp, '#ffaa00', 4);
+  },
+  ring(e, n=12) {
+    for (let i=0;i<n;i++) {
+      const a = (Math.PI*2/n)*i+(e.ringOffset||0);
+      eb(e, Math.cos(a)*2.2, Math.sin(a)*2.2, '#44ffcc', 5);
+    }
+  },
+  spiral(e) {
+    const a = e.spiralAngle||0;
+    for (let i=0;i<3;i++) {
+      const aa = a+(Math.PI*2/3)*i;
+      eb(e, Math.cos(aa)*2.5, Math.sin(aa)*2.5, '#cc44ff', 4);
+    }
+    e.spiralAngle = a+0.2;
+  },
+  laser(e) {
+    const a = Math.atan2(player.y-e.y, player.x-e.x);
+    for (let i=0;i<15;i++) {
+      setTimeout(()=>{ eb(e, Math.cos(a)*(4+i*0.2), Math.sin(a)*(4+i*0.2), '#ff44ff', 3); }, i*40);
+    }
+  }
+};
+// shorthand – push enemy bullet
+function eb(e, dx, dy, color, r) {
+  enemyBullets.push({ x:e.x, y:e.y, dx, dy, r, color });
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  ENEMY WAVE SPAWNER
+// ═══════════════════════════════════════════════════════════════
+function spawnWave(waveIndex) {
+  const waves = [
+    ()=>{ for(let i=0;i<6;i++) setTimeout(()=>spawnEnemy('enemy_a',60+i*50,-30,0,1.2,'aimed',30,100), i*300); },
+    ()=>{ for(let i=0;i<4;i++) { setTimeout(()=>{ spawnEnemy('enemy_b',30+i*30,-20,0.5,1.5,'spread',40,150); spawnEnemy('enemy_b',W-30-i*30,-20,-0.5,1.5,'spread',40,150); },i*400); } },
+    ()=>{ for(let i=0;i<5;i++) setTimeout(()=>spawnEnemy('enemy_c',W*(i+1)/6,-20,Math.sin(i)*0.8,1,'ring',60,200,{ringOffset:i*0.5}), i*500); },
+  ];
+  const w = waves[waveIndex % waves.length];
+  if (w) w();
+}
+
+function spawnEnemy(sprKey, x, y, vx, vy, pattern, hp, sc, extra={}) {
+  const sizes = { enemy_a:{w:24,h:24}, enemy_b:{w:28,h:28}, enemy_c:{w:32,h:32} };
+  const s = sizes[sprKey]||{w:24,h:24};
+  enemies.push({ sprKey, x, y, vx, vy, pattern, hp, maxHp:hp, score:sc,
+                 w:s.w, h:s.h, shootTimer:80, ...extra });
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  BOSS
+// ═══════════════════════════════════════════════════════════════
+function spawnBoss() {
+  bossActive = true;
+  const def = BOSS_ROSTER[(stage-1) % BOSS_ROSTER.length];
+  bossMaxHp = 800+stage*400; bossHp = bossMaxHp;
+  boss = { ...def, x:W/2-def.w/2, y:30, hp:bossHp,
+           targetX:W/2, targetY:60, shootTimer:0,
+           moveTimer:0, spiralAngle:0, ringOffset:0 };
+  document.getElementById('boss-section').style.display='block';
+  updateBossHp();
+  showStageBanner('BOSS: '+def.name);
+}
+
+function updateBossHp() {
+  const pct = Math.max(0, boss.hp/bossMaxHp*100);
+  document.getElementById('boss-hp-fill').style.width = pct+'%';
+  document.getElementById('boss-hp-bar').style.display='block';
+}
+
+function bossBehavior() {
+  if (!boss) return;
+  boss.moveTimer++;
+  if (boss.moveTimer%120===0) {
+    boss.targetX = 60+Math.random()*(W-120) - boss.w/2;
+    boss.targetY = 30+Math.random()*100;
+  }
+  boss.x += (boss.targetX-boss.x)*0.02;
+  boss.y += (boss.targetY-boss.y)*0.02;
+
+  boss.shootTimer++;
+  const phase = boss.hp<bossMaxHp*0.4?2 : boss.hp<bossMaxHp*0.7?1 : 0;
+  const be = { x:boss.x+boss.w/2, y:boss.y+boss.h/2, spiralAngle:boss.spiralAngle, ringOffset:boss.ringOffset };
+
+  if (phase===0) {
+    if (boss.shootTimer%30===0) patterns.aimed(be);
+    if (boss.shootTimer%80===0) patterns.spread(be);
+  } else if (phase===1) {
+    if (boss.shootTimer%20===0) { patterns.spiral(be); boss.spiralAngle=be.spiralAngle; }
+    if (boss.shootTimer%100===0) patterns.ring(be,16);
+    if (boss.shootTimer%50===0) patterns.aimed(be);
+  } else {
+    if (boss.shootTimer%15===0) { patterns.spiral(be); boss.spiralAngle=be.spiralAngle; }
+    if (boss.shootTimer%60===0) patterns.ring(be,20);
+    if (boss.shootTimer%25===0) patterns.aimed(be);
+    if (boss.shootTimer%200===0) patterns.laser(be);
+  }
+
+  bossHp = boss.hp;
+  updateBossHp();
+
+  if (boss.hp<=0) {
+    for (let i=0;i<60;i++) spawnParticle(boss.x+boss.w/2, boss.y+boss.h/2,'#ffdd44',8);
+    score += 10000*stage;
+    bossActive=false; boss=null;
+    document.getElementById('boss-section').style.display='none';
+    enemyBullets=[];
+
+    if (stage>=4) {
+      state='victory';
+      document.getElementById('victory-score').textContent='SCORE: '+score.toLocaleString();
+      document.getElementById('victory-screen').style.display='flex';
+      if (score>hiScore) hiScore=score;
+    } else {
+      stage++; stageTimer=0;
+      showStageBanner('STAGE '+stage);
+      updateUI();
+    }
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  UPDATE FUNCTIONS
+// ═══════════════════════════════════════════════════════════════
+function updateEnemies() {
+  for (let i=enemies.length-1;i>=0;i--) {
+    const e=enemies[i];
+    e.x+=e.vx; e.y+=e.vy; e.shootTimer--;
+    if (e.shootTimer<=0) {
+      const proxy = { x:e.x+e.w/2, y:e.y+e.h/2, spiralAngle:e.spiralAngle, ringOffset:e.ringOffset };
+      patterns[e.pattern](proxy);
+      if (e.pattern==='spiral') e.spiralAngle=proxy.spiralAngle;
+      e.shootTimer = Math.max(30,80-stage*5);
+    }
+    if (e.y>H+60||e.x<-80||e.x>W+80) { enemies.splice(i,1); continue; }
+    // bullet hits
+    for (let bi=bullets.length-1;bi>=0;bi--) {
+      const b=bullets[bi];
+      if (dist(b.x,b.y, e.x+e.w/2, e.y+e.h/2) < e.w/2+4) {
+        e.hp-=b.dmg;
+        bullets.splice(bi,1);
+        spawnParticle(b.x,b.y,'#ffcc44',2);
+        if (e.hp<=0) {
+          score+=e.score*stage;
+          for(let p=0;p<10;p++) spawnParticle(e.x+e.w/2,e.y+e.h/2,'#44ffcc',4);
+          if (Math.random()<0.6) items.push({x:e.x+e.w/2,y:e.y+e.h/2,vy:1,type:Math.random()<0.2?'power':'point'});
+          enemies.splice(i,1); break;
+        }
+      }
+    }
+  }
+}
+
+function updateBullets() {
+  for (let i=bullets.length-1;i>=0;i--) {
+    const b=bullets[i];
+    b.x+=b.dx; b.y+=b.dy;
+    if (b.y<-20||b.x<-20||b.x>W+20) { bullets.splice(i,1); continue; }
+    if (bossActive&&boss && dist(b.x,b.y, boss.x+boss.w/2, boss.y+boss.h/2)<boss.w/2) {
+      boss.hp-=b.dmg; bullets.splice(i,1); spawnParticle(b.x,b.y,'#ffcc44',2);
+    }
+  }
+}
+
+function updateEnemyBullets() {
+  for (let i=enemyBullets.length-1;i>=0;i--) {
+    const b=enemyBullets[i];
+    b.x+=b.dx; b.y+=b.dy;
+    if (b.y>H+20||b.y<-20||b.x<-20||b.x>W+20) { enemyBullets.splice(i,1); continue; }
+    const d = dist(b.x,b.y, player.x,player.y);
+    if (!b.grazed&&d<14) { b.grazed=true; graze++; score+=10; }
+    if (invincible<=0&&bombActive<=0&&d<5) { playerHit(); enemyBullets.splice(i,1); }
+  }
+}
+
+function playerHit() {
+  lives--;
+  invincible=180; enemyBullets=[];
+  power=Math.max(1,power-0.5);
+  for(let i=0;i<20;i++) spawnParticle(player.x,player.y,'#ff4488',5);
+  if (lives<0) {
+    state='gameover';
+    document.getElementById('final-score').textContent='SCORE: '+score.toLocaleString();
+    document.getElementById('gameover-screen').style.display='flex';
+    if (score>hiScore) hiScore=score;
+  }
+  updateUI();
+}
+
+function updateItems() {
+  for (let i=items.length-1;i>=0;i--) {
+    const it=items[i];
+    it.y+=it.vy;
+    if (it.y>H+10) { items.splice(i,1); continue; }
+    if (dist(it.x,it.y,player.x,player.y)<18) {
+      if (it.type==='power') { power=Math.min(4,power+0.2); score+=50; }
+      else { score+=500*stage; }
+      for(let p=0;p<5;p++) spawnParticle(it.x,it.y, it.type==='power'?'#ff44cc':'#44ffcc',3);
+      items.splice(i,1);
+    }
+  }
+}
+
+function spawnParticle(x,y,color,speed) {
+  for (let i=0;i<3;i++) {
+    const a=Math.random()*Math.PI*2, s=Math.random()*speed+1;
+    particles.push({x,y,dx:Math.cos(a)*s,dy:Math.sin(a)*s,life:20+Math.random()*20,maxLife:40,color,r:2+Math.random()*2});
+  }
+}
+
+function updateParticles() {
+  for (let i=particles.length-1;i>=0;i--) {
+    const p=particles[i];
+    p.x+=p.dx; p.y+=p.dy; p.dx*=0.95; p.dy*=0.95; p.life--;
+    if (p.life<=0) particles.splice(i,1);
+  }
+}
+
+function updateStage() {
+  if (bossActive) return;
+  stageTimer++;
+  if (stageTimer===60)                              spawnWave(0);
+  if (stageTimer===300+stage*50)                    spawnWave(1);
+  if (stageTimer===600+stage*80)                    spawnWave(2);
+  if (stageTimer===900+stage*100&&enemies.length===0) spawnBoss();
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  INPUT
+// ═══════════════════════════════════════════════════════════════
+function handleInput() {
+  const focused = keys['ShiftLeft']||keys['ShiftRight'];
+  const sp = focused ? 1.8 : 4+power*0.3;
+  if (keys['ArrowLeft'])  player.x=Math.max(player.w/2, player.x-sp);
+  if (keys['ArrowRight']) player.x=Math.min(W-player.w/2, player.x+sp);
+  if (keys['ArrowUp'])    player.y=Math.max(player.h/2, player.y-sp);
+  if (keys['ArrowDown'])  player.y=Math.min(H-player.h/2, player.y+sp);
+
+  player.shootCooldown--;
+  if (keys['KeyZ']&&player.shootCooldown<=0) {
+    playerShoot(); player.shootCooldown=Math.max(2,6-Math.floor(power));
+  }
+  if (keys['KeyX']&&bombs>0&&bombActive<=0) {
+    bombs--; bombActive=180; enemyBullets=[];
+    score+=1000;
+    for(let i=0;i<40;i++) spawnParticle(player.x,player.y,'#44aaff',8);
+    updateUI();
+  }
+  if (keys['Escape']) { paused=!paused; keys['Escape']=false; }
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  DRAW
+// ═══════════════════════════════════════════════════════════════
+const stars = Array.from({length:80},()=>({
+  x:Math.random()*384, y:Math.random()*448,
+  speed:0.3+Math.random()*1.2, r:Math.random()*1.5, b:Math.random()
+}));
+
+function drawBG() {
+  ctx.fillStyle='#060010'; ctx.fillRect(0,0,W,H);
+  // lane lines
+  ctx.strokeStyle='#1a0030'; ctx.lineWidth=0.5;
+  const ly=(frame*2)%H;
+  for(let y=ly-H;y<H;y+=40){ ctx.beginPath();ctx.moveTo(0,y);ctx.lineTo(W,y);ctx.stroke(); }
+  // stars
+  stars.forEach(s=>{
+    s.y+=s.speed; if(s.y>H){s.y=0;s.x=Math.random()*W;}
+    ctx.fillStyle=`rgba(200,170,255,${0.4+s.b*0.6})`;
+    ctx.beginPath(); ctx.arc(s.x,s.y,s.r,0,Math.PI*2); ctx.fill();
+  });
+}
+
+function drawPlayer() {
+  if (invincible>0&&Math.floor(invincible/4)%2===0) return;
+  const px=player.x-player.w/2, py=player.y-player.h/2;
+
+  // bomb aura ring
+  if (bombActive>0) {
+    const ba=bombActive/180;
+    ctx.save(); ctx.strokeStyle=`rgba(100,180,255,${ba*0.8})`; ctx.lineWidth=2;
+    ctx.beginPath(); ctx.arc(player.x,player.y,(1-ba)*80+10,0,Math.PI*2); ctx.stroke(); ctx.restore();
+  }
+
+  // player sprite (drawn at pixel coords)
+  drawSprite('player', px, py, player.w, player.h);
+
+  // hitbox when focused
+  if (keys['ShiftLeft']||keys['ShiftRight']) {
+    ctx.save();
+    ctx.strokeStyle='rgba(255,200,255,0.9)'; ctx.lineWidth=1;
+    ctx.beginPath(); ctx.arc(player.x,player.y,4,0,Math.PI*2); ctx.stroke();
+    ctx.fillStyle='rgba(255,180,255,0.4)'; ctx.fill();
+    ctx.restore();
+  }
+}
+
+function drawBullets() {
+  ctx.save();
+  ctx.shadowColor='#ffcc00'; ctx.shadowBlur=4;
+  bullets.forEach(b=>{
+    ctx.fillStyle='#ffeeaa';
+    ctx.fillRect(b.x-1.5, b.y-4, 3, 8);
+  });
+  ctx.restore();
+}
+
+function drawEnemyBullets() {
+  enemyBullets.forEach(b=>{
+    ctx.save();
+    ctx.shadowColor=b.color; ctx.shadowBlur=6;
+    ctx.fillStyle='#ffffff'; ctx.globalAlpha=1;
+    ctx.beginPath(); ctx.arc(b.x,b.y,b.r*0.4,0,Math.PI*2); ctx.fill();
+    ctx.fillStyle=b.color; ctx.globalAlpha=0.7;
+    ctx.beginPath(); ctx.arc(b.x,b.y,b.r,0,Math.PI*2); ctx.fill();
+    ctx.restore();
+  });
+}
+
+function drawEnemies() {
+  enemies.forEach(e=>{
+    drawSprite(e.sprKey, e.x, e.y, e.w, e.h);
+    // HP bar
+    ctx.fillStyle='#330022'; ctx.fillRect(e.x, e.y+e.h+2, e.w, 3);
+    ctx.fillStyle='#ff0044'; ctx.fillRect(e.x, e.y+e.h+2, e.w*(e.hp/e.maxHp), 3);
+  });
+}
+
+function drawBoss() {
+  if (!boss) return;
+  const t=frame*0.05;
+  // pulsing aura
+  ctx.save();
+  ctx.strokeStyle=`rgba(255,0,150,${0.25+Math.sin(t*3)*0.1})`; ctx.lineWidth=2;
+  ctx.beginPath(); ctx.arc(boss.x+boss.w/2,boss.y+boss.h/2, boss.w/2+14+Math.sin(t*2)*4,0,Math.PI*2); ctx.stroke();
+  // rotating gem ring
+  for(let i=0;i<6;i++){
+    const a=t+(Math.PI*2/6)*i;
+    const rx=boss.x+boss.w/2+Math.cos(a)*(boss.w/2+20);
+    const ry=boss.y+boss.h/2+Math.sin(a)*(boss.w/2+20);
+    ctx.fillStyle=`hsl(${(frame*2+i*60)%360},100%,70%)`;
+    ctx.beginPath(); ctx.arc(rx,ry,4,0,Math.PI*2); ctx.fill();
+  }
+  ctx.restore();
+
+  drawSprite(boss.key, boss.x, boss.y, boss.w, boss.h);
+}
+
+function drawItems() {
+  items.forEach(it=>{
+    ctx.save();
+    if (it.type==='power') {
+      ctx.fillStyle='#ff44cc'; ctx.shadowColor='#ff44cc'; ctx.shadowBlur=8;
+      ctx.translate(it.x,it.y);
+      ctx.beginPath(); ctx.moveTo(0,-6); ctx.lineTo(5,2); ctx.lineTo(-5,2); ctx.closePath(); ctx.fill();
+    } else {
+      ctx.fillStyle='#44ffcc'; ctx.shadowColor='#44ffcc'; ctx.shadowBlur=8;
+      ctx.fillRect(it.x-4,it.y-4,8,8);
+    }
+    ctx.restore();
+  });
+}
+
+function drawParticles() {
+  particles.forEach(p=>{
+    ctx.globalAlpha=p.life/p.maxLife;
+    ctx.fillStyle=p.color;
+    ctx.beginPath(); ctx.arc(p.x,p.y,p.r*(p.life/p.maxLife),0,Math.PI*2); ctx.fill();
+  });
+  ctx.globalAlpha=1;
+}
+
+function drawHUD() {
+  ctx.fillStyle='rgba(180,120,255,0.25)';
+  ctx.font='10px "Noto Serif JP"';
+  ctx.textAlign='left';
+  ctx.fillText('ESC: pause',6,H-6);
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  UI SIDEBAR
+// ═══════════════════════════════════════════════════════════════
+let lastUIFrame=0;
+function updateUI() {
+  document.getElementById('scoreDisplay').textContent=score.toLocaleString();
+  document.getElementById('hiScoreDisplay').textContent=hiScore.toLocaleString();
+  document.getElementById('stageDisplay').textContent=stage;
+  document.getElementById('powerDisplay').textContent=power.toFixed(1);
+  document.getElementById('grazeDisplay').textContent=graze;
+  // lives
+  const ld=document.getElementById('livesDisplay'); ld.innerHTML='';
+  for(let i=0;i<3;i++){
+    const el=document.createElement('div');
+    el.className='life-icon'+(i<=lives?'':' life-empty'); ld.appendChild(el);
+  }
+  // bombs
+  const bd=document.getElementById('bombsDisplay'); bd.innerHTML='';
+  for(let i=0;i<3;i++){
+    const el=document.createElement('div');
+    el.className='bomb-icon'+(i<bombs?'':' bomb-empty'); bd.appendChild(el);
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  MAIN LOOP
+// ═══════════════════════════════════════════════════════════════
+function loop() {
+  requestAnimationFrame(loop);
+  if (state==='loading') {
+    ctx.fillStyle='#060010'; ctx.fillRect(0,0,W,H);
+    ctx.fillStyle='#cc44ff'; ctx.font='16px "Noto Serif JP"'; ctx.textAlign='center';
+    ctx.fillText('Loading sprites…', W/2, H/2);
+    return;
+  }
+  if (state!=='playing') return;
+  if (paused) {
+    ctx.fillStyle='rgba(0,0,0,0.5)'; ctx.fillRect(0,0,W,H);
+    ctx.fillStyle='#e0c0ff'; ctx.font='20px "Noto Serif JP"'; ctx.textAlign='center';
+    ctx.fillText('PAUSED',W/2,H/2);
+    return;
+  }
+  frame++;
+  if (invincible>0) invincible--;
+  if (bombActive>0) bombActive--;
+
+  handleInput();
+  updateStage();
+  if (bossActive) bossBehavior();
+  updateEnemies();
+  updateBullets();
+  updateEnemyBullets();
+  updateItems();
+  updateParticles();
+
+  drawBG();
+  drawItems();
+  drawParticles();
+  drawEnemyBullets();
+  drawEnemies();
+  drawBoss();
+  drawBullets();
+  drawPlayer();
+  drawHUD();
+
+  if (frame-lastUIFrame>10) { updateUI(); lastUIFrame=frame; }
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  SCREEN TRANSITIONS
+// ═══════════════════════════════════════════════════════════════
+function startGame() {
+  document.getElementById('title-screen').style.display='none';
+  document.getElementById('gameover-screen').style.display='none';
+  document.getElementById('victory-screen').style.display='none';
+  document.getElementById('boss-section').style.display='none';
+  initGame();
+  state='playing';
+}
+function showTitle() {
+  document.getElementById('gameover-screen').style.display='none';
+  document.getElementById('victory-screen').style.display='none';
+  document.getElementById('title-screen').style.display='flex';
+  state='title';
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  BOOT
+// ═══════════════════════════════════════════════════════════════
+loop();   // start render loop (shows "Loading…" screen)
+loadSprites(()=>{
+  state='title';
+  document.getElementById('title-screen').style.display='flex';
+});
+</script>
+</body>
+</html>
