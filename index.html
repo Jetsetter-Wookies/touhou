@@ -427,7 +427,9 @@ const patterns = {
 };
 // shorthand – push enemy bullet
 function eb(e, dx, dy, color, r) {
-  enemyBullets.push({ x:e.x, y:e.y, dx, dy, r, color });
+  // Baby mode: bullets home for 60 frames then go straight
+  const homeFrames = babyMode ? 60 : 0;
+  enemyBullets.push({ x:e.x, y:e.y, dx, dy, r, color, homeFrames });
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -525,7 +527,7 @@ function spawnBoss() {
   bossActive = true;
   const def = BOSS_ROSTER[(stage-1) % BOSS_ROSTER.length];
   const baseHp = extraMode ? 6000 : (easyMode||babyMode) ? 1200 : 3000;
-  bossMaxHp = baseHp + ((easyMode||babyMode) ? stage*400 : stage*1200); bossHp = bossMaxHp;
+  bossMaxHp = (baseHp + ((easyMode||babyMode) ? stage*400 : stage*1200)) * 2; bossHp = bossMaxHp;
   boss = { ...def, x:W/2-def.w/2, y:30, hp:bossHp,
            targetX:W/2, targetY:60, shootTimer:0,
            moveTimer:0, spiralAngle:0, ringOffset:0 };
@@ -578,6 +580,13 @@ function bossBehavior() {
   if (boss.hp<=0) {
     for (let i=0;i<60;i++) spawnParticle(boss.x+boss.w/2, boss.y+boss.h/2,'#ffdd44',8);
     score += 10000*stage;
+    // Drop life orb (not in extra mode)
+    if (!extraMode) {
+      const dropChance = babyMode ? 1.0 : easyMode ? 0.85 : 0.5; // hard=50%, normal=85%, baby=100%
+      if (Math.random() < dropChance) {
+        items.push({ x:boss.x+(boss.w||48)/2, y:boss.y+(boss.h||56)/2, vy:0.8, type:'life' });
+      }
+    }
     bossActive=false; boss=null;
     document.getElementById('boss-section').style.display='none';
     enemyBullets=[];
@@ -674,6 +683,16 @@ function updateBullets() {
 function updateEnemyBullets() {
   for (let i=enemyBullets.length-1;i>=0;i--) {
     const b=enemyBullets[i];
+    // Baby mode homing: steer toward player for homeFrames, then fly straight
+    if (b.homeFrames && b.homeFrames > 0) {
+      b.homeFrames--;
+      const ha = Math.atan2(player.y-b.y, player.x-b.x);
+      const spd = Math.sqrt(b.dx*b.dx+b.dy*b.dy) || 1.2;
+      b.dx += Math.cos(ha) * 0.08;
+      b.dy += Math.sin(ha) * 0.08;
+      const ns = Math.sqrt(b.dx*b.dx+b.dy*b.dy);
+      if (ns > spd) { b.dx=b.dx/ns*spd; b.dy=b.dy/ns*spd; }
+    }
     b.x+=b.dx; b.y+=b.dy;
     if (b.y>H+20||b.y<-20||b.x<-20||b.x>W+20) { enemyBullets.splice(i,1); continue; }
     const d = dist(b.x,b.y, player.x,player.y);
@@ -703,8 +722,14 @@ function updateItems() {
     if (it.y>H+10) { items.splice(i,1); continue; }
     if (dist(it.x,it.y,player.x,player.y)<18) {
       if (it.type==='power') { power=Math.min(4,power+0.2); score+=50; }
+      else if (it.type==='life') {
+        const cap = babyMode ? 7 : Infinity;
+        if (lives < cap) { lives++; updateUI(); }
+        score+=1000;
+      }
       else { score+=500*stage; }
-      for(let p=0;p<5;p++) spawnParticle(it.x,it.y, it.type==='power'?'#ff44cc':'#44ffcc',3);
+      const pcolor = it.type==='life'?'#ffdd44':it.type==='power'?'#ff44cc':'#44ffcc';
+      for(let p=0;p<8;p++) spawnParticle(it.x,it.y,pcolor,4);
       items.splice(i,1);
     }
   }
@@ -943,7 +968,31 @@ function drawBoss() {
 function drawItems() {
   items.forEach(it=>{
     ctx.save();
-    if (it.type==='power') {
+    if (it.type==='life') {
+      // Golden star with pulsing glow
+      const pulse = 0.7 + Math.sin(frame * 0.15) * 0.3;
+      ctx.shadowColor='#ffdd44'; ctx.shadowBlur=12*pulse;
+      ctx.translate(it.x, it.y);
+      // Draw a small heart/star shape
+      ctx.fillStyle=`rgba(255,220,50,${pulse})`;
+      // Star shape
+      for (let s=0;s<5;s++) {
+        const a = (s/5)*Math.PI*2 - Math.PI/2;
+        const ia = a + Math.PI/5;
+        if (s===0) ctx.beginPath();
+        ctx.lineTo(Math.cos(a)*8, Math.sin(a)*8);
+        ctx.lineTo(Math.cos(ia)*4, Math.sin(ia)*4);
+      }
+      ctx.closePath(); ctx.fill();
+      // White dot center
+      ctx.fillStyle='#ffffff';
+      ctx.beginPath(); ctx.arc(0,0,2,0,Math.PI*2); ctx.fill();
+      // 1UP label
+      ctx.fillStyle='#ffee88';
+      ctx.font='bold 8px sans-serif';
+      ctx.textAlign='center';
+      ctx.fillText('1UP', 0, 18);
+    } else if (it.type==='power') {
       ctx.fillStyle='#ff44cc'; ctx.shadowColor='#ff44cc'; ctx.shadowBlur=8;
       ctx.translate(it.x,it.y);
       ctx.beginPath(); ctx.moveTo(0,-6); ctx.lineTo(5,2); ctx.lineTo(-5,2); ctx.closePath(); ctx.fill();
@@ -1069,9 +1118,10 @@ function updateUI() {
   document.getElementById('stageDisplay').textContent=(extraMode?"✦":easyMode?"☆":babyMode?"✿":"")+stage;
   document.getElementById('powerDisplay').textContent=power.toFixed(1);
   document.getElementById('grazeDisplay').textContent=graze;
-  // lives
+  // lives – show actual count (no fixed max)
   const ld=document.getElementById('livesDisplay'); ld.innerHTML='';
-  for(let i=0;i<3;i++){
+  const displayLives = Math.max(lives+1, 1);
+  for(let i=0;i<displayLives;i++){
     const el=document.createElement('div');
     el.className='life-icon'+(i<=lives?'':' life-empty'); ld.appendChild(el);
   }
