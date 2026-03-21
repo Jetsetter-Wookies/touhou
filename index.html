@@ -304,6 +304,7 @@ function initGame() {
   bullets=[]; enemies=[]; enemyBullets=[]; particles=[]; items=[]; boss=null; laserCharges=[];
   updateUI();
   showStageBanner('STAGE 1');
+  musicOnStageStart(1);
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -599,6 +600,7 @@ function spawnBoss() {
   updateBossHp();
   showStageBanner('BOSS: '+def.name);
   bgPaused = true;
+  musicOnBossSpawn(stage);
   bossQuip = def.quip || '';
   bossQuipSpeaker = def.name.includes('  ') ? def.name.split('  ')[1] : def.name;
   bossQuipTimer = 300;
@@ -826,6 +828,7 @@ function advanceAfterBoss() {
   const maxStage = (hardMode || extraMode) ? 7 : 6;
   bgPaused = false;
   if (stage >= maxStage) {
+    musicOnVictory();
     state='victory';
     document.getElementById('victory-score').textContent='SCORE: '+score.toLocaleString();
     document.getElementById('victory-screen').style.display='flex';
@@ -840,6 +843,7 @@ function advanceAfterBoss() {
     enemies=[]; enemyBullets=[];
     bgScrollY=0; bgPaused = false;
     showStageBanner('STAGE '+stage);
+    musicOnBossDefeated(stage);  // stage already incremented
     updateUI();
   }
 }
@@ -1606,6 +1610,7 @@ function loop() {
 //  SCREEN TRANSITIONS
 // ═══════════════════════════════════════════════════════════════
 function startBabyMode() {
+  // music hook added below via initGame trigger
   babyMode  = true;
   easyMode  = false;
   extraMode = false;
@@ -1620,6 +1625,7 @@ function startBabyMode() {
 }
 
 function startEasyMode() {
+  // music hook added below via initGame trigger
   easyMode  = true;
   extraMode = false;
   babyMode  = false;
@@ -1636,6 +1642,7 @@ function startEasyMode() {
 }
 
 function startExtraMode() {
+  // music hook added below via initGame trigger
   extraMode = true;
   easyMode = false;
   babyMode = false;
@@ -1665,6 +1672,7 @@ function showTitle() {
   document.getElementById('gameover-screen').style.display='none';
   document.getElementById('victory-screen').style.display='none';
   document.getElementById('title-screen').style.display='flex';
+  musicOnTitle();
   const eb = document.getElementById('title-extra-btn');
   if (eb) eb.style.display = extraMode || document.getElementById('extra-mode-btn').style.display==='inline-block' ? 'inline-block' : 'none';
   state='title';
@@ -1677,7 +1685,105 @@ loop();   // start render loop (shows "Loading…" screen)
 loadSprites(()=>{
   state='title';
   document.getElementById('title-screen').style.display='flex';
+  musicOnTitle();
 });
+
+// ═══════════════════════════════════════════════════════════════
+//  MUSIC SYSTEM
+// ═══════════════════════════════════════════════════════════════
+const MusicPlayer = (() => {
+  let current = null;      // currently playing Audio
+  let fadeInterval = null; // active fade setInterval
+
+  function clearFade() {
+    if (fadeInterval) { clearInterval(fadeInterval); fadeInterval = null; }
+  }
+
+  function stopAll() {
+    clearFade();
+    if (current) { current.pause(); current.currentTime = 0; current = null; }
+  }
+
+  // Fade out current track, then call onDone (optional)
+  function fadeOut(duration = 800, onDone) {
+    clearFade();
+    if (!current) { if (onDone) onDone(); return; }
+    const track = current;
+    const startVol = track.volume;
+    const steps = 30;
+    const stepTime = duration / steps;
+    const stepAmt  = startVol / steps;
+    fadeInterval = setInterval(() => {
+      track.volume = Math.max(0, track.volume - stepAmt);
+      if (track.volume <= 0) {
+        clearFade();
+        track.pause(); track.currentTime = 0;
+        if (current === track) current = null;
+        if (onDone) onDone();
+      }
+    }, stepTime);
+  }
+
+  // Start a new track fading in from 0 to targetVol
+  function fadeIn(src, loop = true, targetVol = 0.75, duration = 1200) {
+    const audio = new Audio(src);
+    audio.loop = loop;
+    audio.volume = 0;
+    audio.play().catch(() => {}); // ignore autoplay block silently
+    current = audio;
+    clearFade();
+    const steps = 30;
+    const stepTime = duration / steps;
+    const stepAmt  = targetVol / steps;
+    fadeInterval = setInterval(() => {
+      if (current !== audio) { clearFade(); return; } // superseded
+      audio.volume = Math.min(targetVol, audio.volume + stepAmt);
+      if (audio.volume >= targetVol) clearFade();
+    }, stepTime);
+    return audio;
+  }
+
+  // Cross-fade: fade out current then fade in new src
+  function crossFade(src, loop = true, targetVol = 0.75, outDur = 800, inDur = 1200) {
+    fadeOut(outDur, () => fadeIn(src, loop, targetVol, inDur));
+  }
+
+  // Gentle cross-fade (slower) for stage→stage
+  function gentleCrossFade(src, loop = true) {
+    crossFade(src, loop, 0.7, 1200, 1600);
+  }
+
+  return { fadeOut, fadeIn, crossFade, gentleCrossFade, stopAll };
+})();
+
+// ── Music path helpers ──────────────────────────────────────────
+function stageMusicSrc(stageNum) {
+  return `assets/music/level ${stageNum}/stage.mp3`;
+}
+function bossMusicSrc(stageNum) {
+  return `assets/music/level ${stageNum}/boss.mp3`;
+}
+const TITLE_MUSIC_SRC = 'assets/music/title/title.mp3';
+
+// ── Hooks called at key game events ────────────────────────────
+function musicOnTitle() {
+  MusicPlayer.crossFade(TITLE_MUSIC_SRC, true, 0.7);
+}
+function musicOnStageStart(stageNum) {
+  MusicPlayer.gentleCrossFade(stageMusicSrc(stageNum), true);
+}
+function musicOnBossSpawn(stageNum) {
+  // Fade out stage music quickly, fade in boss music
+  MusicPlayer.crossFade(bossMusicSrc(stageNum), true, 0.8, 600, 900);
+}
+function musicOnBossDefeated(nextStageNum) {
+  // Boss music fades out, then stage music fades in gently
+  MusicPlayer.crossFade(stageMusicSrc(nextStageNum), true, 0.7, 1000, 1800);
+}
+function musicOnVictory() {
+  MusicPlayer.fadeOut(1500);
+}
+
 </script>
 </body>
 </html>
