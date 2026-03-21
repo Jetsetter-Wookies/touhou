@@ -517,7 +517,7 @@ function spawnEnemy(sprKey, x, y, vx, vy, pattern, hp, sc, extra={}) {
   const s = sizes[sprKey]||{w:24,h:24};
   const initTimer = babyMode ? 60 + Math.floor(Math.random()*60) : easyMode ? 120 + Math.floor(Math.random()*180) : 80;
   enemies.push({ sprKey, x, y, vx, vy, pattern, hp, maxHp:hp, score:sc,
-                 w:s.w, h:s.h, shootTimer:initTimer, ...extra });
+                 w:s.w, h:s.h, shootTimer:initTimer, firstShot:true, ...extra });
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -628,6 +628,25 @@ function updateEnemies() {
       if (spd > 1.8) { e.vx = e.vx/spd*1.8; e.vy = e.vy/spd*1.8; }
     }
     e.x+=e.vx; e.y+=e.vy; e.shootTimer--;
+    // Baby mode: fire twice the moment enemy enters screen (not wave 0)
+    if (babyMode && e.firstShot && e.y >= 0 && wavePhase > 1) {
+      e.firstShot = false;
+      const proxy = { x:e.x+e.w/2, y:e.y+e.h/2, spiralAngle:e.spiralAngle, ringOffset:e.ringOffset };
+      if (patterns[e.pattern]) {
+        patterns[e.pattern](proxy);
+        if (e.pattern==='spiral') e.spiralAngle=proxy.spiralAngle;
+        // second shot slightly delayed via queue
+        queueSpawn(12, () => {
+          if (!enemies.includes(e)) return;
+          const p2 = { x:e.x+e.w/2, y:e.y+e.h/2, spiralAngle:e.spiralAngle, ringOffset:e.ringOffset };
+          patterns[e.pattern](p2);
+          if (e.pattern==='spiral') e.spiralAngle=p2.spiralAngle;
+        });
+      }
+      e.shootTimer = 80; // reset so next shot comes at normal interval
+    } else if (e.firstShot && e.y >= 0) {
+      e.firstShot = false; // clear flag in other modes too
+    }
     if (e.shootTimer<=0) {
       const proxy = { x:e.x+e.w/2, y:e.y+e.h/2, spiralAngle:e.spiralAngle, ringOffset:e.ringOffset };
       const nonCircle = e.pattern==='aimed' || e.pattern==='spread';
