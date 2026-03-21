@@ -1672,7 +1672,7 @@ function showTitle() {
   document.getElementById('gameover-screen').style.display='none';
   document.getElementById('victory-screen').style.display='none';
   document.getElementById('title-screen').style.display='flex';
-  musicOnTitle();
+  if (_musicStarted) musicOnTitle();
   const eb = document.getElementById('title-extra-btn');
   if (eb) eb.style.display = extraMode || document.getElementById('extra-mode-btn').style.display==='inline-block' ? 'inline-block' : 'none';
   state='title';
@@ -1685,8 +1685,22 @@ loop();   // start render loop (shows "Loading…" screen)
 loadSprites(()=>{
   state='title';
   document.getElementById('title-screen').style.display='flex';
-  musicOnTitle();
+  // Title music starts on first user interaction (browser autoplay policy)
 });
+
+// Play title music on first user interaction (browser autoplay requires this)
+let _musicStarted = false;
+function _tryStartTitleMusic() {
+  if (_musicStarted) return;
+  _musicStarted = true;
+  if (state === 'title') musicOnTitle();
+  document.removeEventListener('click',    _tryStartTitleMusic);
+  document.removeEventListener('keydown',  _tryStartTitleMusic);
+  document.removeEventListener('touchstart', _tryStartTitleMusic);
+}
+document.addEventListener('click',     _tryStartTitleMusic);
+document.addEventListener('keydown',   _tryStartTitleMusic);
+document.addEventListener('touchstart',_tryStartTitleMusic);
 
 // ═══════════════════════════════════════════════════════════════
 //  MUSIC SYSTEM
