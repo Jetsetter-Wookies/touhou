@@ -192,7 +192,8 @@ ctx.imageSmoothingEnabled = false;   // keep sprites crisp / pixel-art
 //  STATE
 // ═══════════════════════════════════════════════════════════════
 let state = 'loading';
-let extraMode = false;   // true after first clear
+let extraMode = false;
+let scrollY = 0;   // true after first clear
 let score=0, hiScore=100000, graze=0, power=1.0;
 let lives=3, bombs=3, frame=0, stage=1, paused=false;
 let invincible=0, bombActive=0, stageTimer=0;
@@ -229,7 +230,7 @@ let bossQuipTimer = 0;
 function initGame() {
   score=0; graze=0; power=1.0;
   lives=3; bombs=3; frame=0; stage=1;
-  invincible=0; bombActive=0; stageTimer=0;
+  invincible=0; bombActive=0; stageTimer=0; scrollY=0;
   bossActive=false;
   wavePhase=0; waveDelay=90; spawnQueue=[];
   player = { x:W/2, y:H-80, w:32, h:40, speed:4, shootCooldown:0 };
@@ -728,22 +729,21 @@ function handleInput() {
 // ═══════════════════════════════════════════════════════════════
 //  DRAW
 // ═══════════════════════════════════════════════════════════════
-const STAR_SPEED_MULT = () => extraMode ? 1.0 : 0.3;
 const stars = Array.from({length:80},()=>({
   x:Math.random()*384, y:Math.random()*448,
-  speed:0.3+Math.random()*1.2, r:Math.random()*1.5, b:Math.random()
+  speed:0.3+Math.random()*1.2, r:Math.random()*1.5, b:Math.random(), yf:Math.random()*448
 }));
 
 function drawBG() {
   ctx.fillStyle='#060010'; ctx.fillRect(0,0,W,H);
   // lane lines
   ctx.strokeStyle='#1a0030'; ctx.lineWidth=0.5;
-  const scrollSpd = extraMode ? 2 : 0.5;
-  const ly=(frame*scrollSpd)%H;
+  const ly = scrollY % H;
   for(let y=ly-H;y<H;y+=40){ ctx.beginPath();ctx.moveTo(0,y);ctx.lineTo(W,y);ctx.stroke(); }
   // stars
+  const starMult = extraMode ? 1.0 : 0.35;
   stars.forEach(s=>{
-    s.y+=s.speed*STAR_SPEED_MULT(); if(s.y>H){s.y=0;s.x=Math.random()*W;}
+    s.y+=s.speed*starMult; if(s.y>H){s.y=0;s.x=Math.random()*W;}
     ctx.fillStyle=`rgba(200,170,255,${0.4+s.b*0.6})`;
     ctx.beginPath(); ctx.arc(s.x,s.y,s.r,0,Math.PI*2); ctx.fill();
   });
@@ -1018,6 +1018,7 @@ function loop() {
     return;
   }
   frame++;
+  scrollY += extraMode ? 2 : 0.6;  // fractional scroll accumulator
   if (invincible>0) invincible--;
   if (bombActive>0) bombActive--;
 
