@@ -218,7 +218,7 @@ function initGame() {
   lives=3; bombs=3; frame=0; stage=1;
   invincible=0; bombActive=0; stageTimer=0;
   bossActive=false;
-  wavePhase=0; waveDelay=90;
+  wavePhase=0; waveDelay=90; spawnQueue=[];
   player = { x:W/2, y:H-80, w:32, h:40, speed:4, shootCooldown:0 };
   bullets=[]; enemies=[]; enemyBullets=[]; particles=[]; items=[]; boss=null;
   updateUI();
@@ -316,16 +316,42 @@ function eb(e, dx, dy, color, r) {
 }
 
 // ═══════════════════════════════════════════════════════════════
-//  ENEMY WAVE SPAWNER
+//  ENEMY WAVE SPAWNER – frame-based queue, no setTimeout
 // ═══════════════════════════════════════════════════════════════
+let spawnQueue = [];
+function queueSpawn(delayFrames, fn) {
+  spawnQueue.push({ atFrame: frame + delayFrames, fn });
+}
+function processSpawnQueue() {
+  for (let i = spawnQueue.length - 1; i >= 0; i--) {
+    if (frame >= spawnQueue[i].atFrame) {
+      spawnQueue[i].fn();
+      spawnQueue.splice(i, 1);
+    }
+  }
+}
+
 function spawnWave(waveIndex) {
-  const waves = [
-    ()=>{ for(let i=0;i<6;i++) setTimeout(()=>spawnEnemy('enemy_a',60+i*50,-30,0,1.2,'aimed',30,100), i*300); },
-    ()=>{ for(let i=0;i<4;i++) { setTimeout(()=>{ spawnEnemy('enemy_b',30+i*30,-20,0.5,1.5,'spread',40,150); spawnEnemy('enemy_b',W-30-i*30,-20,-0.5,1.5,'spread',40,150); },i*400); } },
-    ()=>{ for(let i=0;i<5;i++) setTimeout(()=>spawnEnemy('enemy_c',W*(i+1)/6,-20,Math.sin(i)*0.8,1,'ring',60,200,{ringOffset:i*0.5}), i*500); },
-  ];
-  const w = waves[waveIndex % waves.length];
-  if (w) w();
+  const w = waveIndex % 3;
+  if (w === 0) {
+    for (let i = 0; i < 6; i++) {
+      const ii = i;
+      queueSpawn(i * 18, () => spawnEnemy('enemy_a', 60 + ii * 50, -30, 0, 1.2, 'aimed', 30, 100));
+    }
+  } else if (w === 1) {
+    for (let i = 0; i < 4; i++) {
+      const ii = i;
+      queueSpawn(i * 24, () => {
+        spawnEnemy('enemy_b', 30 + ii * 30, -20, 0.5, 1.5, 'spread', 40, 150);
+        spawnEnemy('enemy_b', W - 30 - ii * 30, -20, -0.5, 1.5, 'spread', 40, 150);
+      });
+    }
+  } else {
+    for (let i = 0; i < 5; i++) {
+      const ii = i;
+      queueSpawn(i * 30, () => spawnEnemy('enemy_c', W * (ii + 1) / 6, -20, Math.sin(ii) * 0.8, 1, 'ring', 60, 200, { ringOffset: ii * 0.5 }));
+    }
+  }
 }
 
 function spawnEnemy(sprKey, x, y, vx, vy, pattern, hp, sc, extra={}) {
@@ -401,7 +427,7 @@ function bossBehavior() {
       if (score>hiScore) hiScore=score;
     } else {
       stage++; stageTimer=0;
-      wavePhase=0; waveDelay=120;
+      wavePhase=0; waveDelay=120; spawnQueue=[];
       enemies=[]; enemyBullets=[];
       showStageBanner('STAGE '+stage);
       updateUI();
@@ -508,54 +534,42 @@ function updateParticles() {
   }
 }
 
-// ── Wave state machine ──────────────────────────────────────────
-// Each stage runs through: wave0 → clear → wave1 → clear → wave2 → clear → boss
-// wavePhase tracks where we are; waveDelay counts down between phases.
-let wavePhase = 0;   // 0-5: 0=pre-wave0 delay, 1=wave0 live,
-                     //      2=pre-wave1 delay, 3=wave1 live,
-                     //      4=pre-wave2 delay, 5=wave2 live, 6=pre-boss
-let waveDelay = 90;  // frames to wait before first wave
+// ── Wave state machine ─────────────────────────────────────────
+// Simple timer-driven: no reliance on enemies.length for advancement.
+// Each wave fires after a fixed delay; boss fires after wave 2 delay.
+let wavePhase = 0;
+let waveDelay = 90;
 
 function updateStage() {
   if (bossActive) return;
+  processSpawnQueue();
 
-  // Count enemies that are still on-screen (not yet scrolled off)
-  const alive = enemies.length;
+  // Only advance "wave done" phases once spawn queue is empty AND enemies are gone
+  const allClear = spawnQueue.length === 0 && enemies.length === 0;
 
   switch (wavePhase) {
-    case 0: // waiting before wave 0
-      waveDelay--;
-      if (waveDelay <= 0) { spawnWave(0); wavePhase = 1; }
+    case 0:
+      if (--waveDelay <= 0) { spawnWave(0); wavePhase = 1; }
       break;
-
-    case 1: // wave 0 live – wait until all gone
-      if (alive === 0) { waveDelay = 120; wavePhase = 2; }
+    case 1:
+      if (allClear) { waveDelay = 120; wavePhase = 2; }
       break;
-
-    case 2: // gap before wave 1
-      waveDelay--;
-      if (waveDelay <= 0) { spawnWave(1); wavePhase = 3; }
+    case 2:
+      if (--waveDelay <= 0) { spawnWave(1); wavePhase = 3; }
       break;
-
-    case 3: // wave 1 live
-      if (alive === 0) { waveDelay = 120; wavePhase = 4; }
+    case 3:
+      if (allClear) { waveDelay = 120; wavePhase = 4; }
       break;
-
-    case 4: // gap before wave 2
-      waveDelay--;
-      if (waveDelay <= 0) { spawnWave(2); wavePhase = 5; }
+    case 4:
+      if (--waveDelay <= 0) { spawnWave(2); wavePhase = 5; }
       break;
-
-    case 5: // wave 2 live
-      if (alive === 0) { waveDelay = 150; wavePhase = 6; }
+    case 5:
+      if (allClear) { waveDelay = 150; wavePhase = 6; }
       break;
-
-    case 6: // short pause then boss
-      waveDelay--;
-      if (waveDelay <= 0) { spawnBoss(); wavePhase = 7; }
+    case 6:
+      if (--waveDelay <= 0) { spawnBoss(); wavePhase = 7; }
       break;
-
-    // case 7+: boss fight – bossBehavior() handles everything
+    // case 7: boss fight handled by bossBehavior()
   }
 }
 
