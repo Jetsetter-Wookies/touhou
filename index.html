@@ -1028,7 +1028,7 @@ function drawBG() {
     // Speed: reach top of image by the time boss spawns (wavePhase 20).
     // wavePhase goes 0-19 over ~10 waves × ~200 frames each = ~2000 frames total.
     // We want to cover `scrollable` pixels in ~2000 frames → speed ≈ scrollable/2000
-    const totalFrames = 2200;
+    const totalFrames = 5000;
     const speed = scrollable / totalFrames;
 
     // Advance scroll (pause during boss fight and defeat screen)
