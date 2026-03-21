@@ -399,8 +399,9 @@ function updateOrbs() {
 }
 
 function updateHomingBullets() {
-  bullets.forEach(b => {
-    if (!b.homing) return;
+  for (let _i = bullets.length - 1; _i >= 0; _i--) {
+    const b = bullets[_i];
+    if (!b || !b.homing) continue;
     // find nearest target
     let target = null, best = 999999;
     if (bossActive && boss) {
@@ -420,7 +421,7 @@ function updateHomingBullets() {
       const ns = Math.hypot(b.dx, b.dy);
       if (ns > 6) { b.dx = b.dx/ns*9; b.dy = b.dy/ns*9; }
     }
-  });
+  }
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -1021,25 +1022,21 @@ function drawBG() {
   const lvl = Math.min(stage, 7);
   const bgImg = SPRITES[`bg${lvl}`];
 
-  if (bgImg) {
-    const imgH = bgImg.naturalHeight;         // e.g. 1344
-    const scrollable = imgH - H;             // pixels we can scroll through (896)
+  if (bgImg && bgImg.complete && bgImg.naturalHeight > 0) {
+    const imgH = bgImg.naturalHeight;
+    const scrollable = imgH - H;   // 896px for a 1344px tall image
 
-    // Speed: reach top of image by the time boss spawns (wavePhase 20).
-    // wavePhase goes 0-19 over ~10 waves × ~200 frames each = ~2000 frames total.
-    // We want to cover `scrollable` pixels in ~2000 frames → speed ≈ scrollable/2000
-    const totalFrames = 5000;
-    const speed = scrollable / totalFrames;
+    // Fixed scroll rate: 0.18 px/frame ≈ 10.8 px/sec at 60fps
+    // At that rate, 896px takes ~4978 frames (~83 sec) — covers all 10 waves
+    const speed = 0.18;
 
-    // Advance scroll (pause during boss fight and defeat screen)
-    if (!bgPaused && !defeatScreen) {
+    // Advance scroll only while playing (not boss, not defeat screen)
+    if (!bgPaused && !defeatScreen && state === 'playing') {
       bgScrollY = Math.min(bgScrollY + speed, scrollable);
     }
 
-    // offset: 0 = show top of image (boss area), scrollable = show bottom (stage start)
-    // We start at bottom and scroll toward top, so:
-    const offset = scrollable - bgScrollY;   // starts at scrollable, ends at 0
-
+    // Start at bottom of image, scroll toward top
+    const offset = Math.max(0, scrollable - bgScrollY);
     ctx.drawImage(bgImg, 0, offset, W, H, 0, 0, W, H);
   } else {
     // fallback
