@@ -296,17 +296,17 @@ function getOrbPos(orb) {
 function playerShoot() {
   // ── Tier 1: single stream ──
   if (power < 1.5) {
-    bullets.push({ x:player.x, y:player.y-14, dx:0, dy:-13, dmg:12, type:'laser' });
+    bullets.push({ x:player.x, y:player.y-14, dx:0, dy:-8, dmg:12, type:'laser' });
   }
   // ── Tier 2: double stream ──
   else if (power < 2.5) {
-    bullets.push({ x:player.x-5, y:player.y-14, dx:-0.3, dy:-12, dmg:10, type:'laser' });
-    bullets.push({ x:player.x+5, y:player.y-14, dx: 0.3, dy:-12, dmg:10, type:'laser' });
+    bullets.push({ x:player.x-5, y:player.y-14, dx:-0.3, dy:-7, dmg:10, type:'laser' });
+    bullets.push({ x:player.x+5, y:player.y-14, dx: 0.3, dy:-7, dmg:10, type:'laser' });
   }
   // ── Tier 3+: double stream (orbs handle their own firing below) ──
   else {
-    bullets.push({ x:player.x-5, y:player.y-14, dx:-0.3, dy:-12, dmg:10, type:'laser' });
-    bullets.push({ x:player.x+5, y:player.y-14, dx: 0.3, dy:-12, dmg:10, type:'laser' });
+    bullets.push({ x:player.x-5, y:player.y-14, dx:-0.3, dy:-7, dmg:10, type:'laser' });
+    bullets.push({ x:player.x+5, y:player.y-14, dx: 0.3, dy:-7, dmg:10, type:'laser' });
   }
 }
 
@@ -326,13 +326,13 @@ function updateOrbs() {
       // Homing bullet: finds nearest enemy/boss and curves toward it
       bullets.push({
         x: pos.x, y: pos.y,
-        dx: orb.side * 1.5, dy: -6,
+        dx: orb.side * 1.5, dy: -4,
         dmg: 14, type: 'homing',
         homing: true
       });
     } else {
       // Tier 3: straight-up orb shot
-      bullets.push({ x:pos.x, y:pos.y, dx:0, dy:-10, dmg:12, type:'orb' });
+      bullets.push({ x:pos.x, y:pos.y, dx:0, dy:-6, dmg:12, type:'orb' });
     }
   });
 }
@@ -357,7 +357,7 @@ function updateHomingBullets() {
       b.dy += Math.sin(a) * 0.8;
       // cap speed
       const ns = Math.hypot(b.dx, b.dy);
-      if (ns > 9) { b.dx = b.dx/ns*9; b.dy = b.dy/ns*9; }
+      if (ns > 6) { b.dx = b.dx/ns*9; b.dy = b.dy/ns*9; }
     }
   });
 }
@@ -596,7 +596,7 @@ function updateEnemies() {
             if (r < 0.3)       items.push({x:e.x+e.w/2,y:e.y+e.h/2,vy:1,type:'power'});
             else if (r < 0.8)  items.push({x:e.x+e.w/2,y:e.y+e.h/2,vy:1,type:'point'});
           } else {
-            if (Math.random()<0.8) items.push({x:e.x+e.w/2,y:e.y+e.h/2,vy:3,type:'power'});
+            if (Math.random()<0.8) items.push({x:e.x+e.w/2,y:e.y+e.h/2,vy:2,type:'power'});
           }
           enemies.splice(i,1); killed=true; break;
         }
@@ -728,7 +728,7 @@ function handleInput() {
 // ═══════════════════════════════════════════════════════════════
 //  DRAW
 // ═══════════════════════════════════════════════════════════════
-const STAR_SPEED_MULT = () => extraMode ? 1.0 : 0.5;
+const STAR_SPEED_MULT = () => extraMode ? 1.0 : 0.3;
 const stars = Array.from({length:80},()=>({
   x:Math.random()*384, y:Math.random()*448,
   speed:0.3+Math.random()*1.2, r:Math.random()*1.5, b:Math.random()
@@ -738,7 +738,7 @@ function drawBG() {
   ctx.fillStyle='#060010'; ctx.fillRect(0,0,W,H);
   // lane lines
   ctx.strokeStyle='#1a0030'; ctx.lineWidth=0.5;
-  const scrollSpd = extraMode ? 2 : 1;
+  const scrollSpd = extraMode ? 2 : 0.5;
   const ly=(frame*scrollSpd)%H;
   for(let y=ly-H;y<H;y+=40){ ctx.beginPath();ctx.moveTo(0,y);ctx.lineTo(W,y);ctx.stroke(); }
   // stars
