@@ -492,8 +492,9 @@ function spawnEnemy(sprKey, x, y, vx, vy, pattern, hp, sc, extra={}) {
   if (sprKey === 'enemy_c') hp = 1;  // one-hit kill
   const sizes = { enemy_a:{w:24,h:24}, enemy_b:{w:28,h:28}, enemy_c:{w:32,h:32} };
   const s = sizes[sprKey]||{w:24,h:24};
+  const initTimer = easyMode ? 120 + Math.floor(Math.random()*180) : 80;
   enemies.push({ sprKey, x, y, vx, vy, pattern, hp, maxHp:hp, score:sc,
-                 w:s.w, h:s.h, shootTimer:80, ...extra });
+                 w:s.w, h:s.h, shootTimer:initTimer, ...extra });
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -591,7 +592,7 @@ function updateEnemies() {
       const proxy = { x:e.x+e.w/2, y:e.y+e.h/2, spiralAngle:e.spiralAngle, ringOffset:e.ringOffset };
       patterns[e.pattern](proxy);
       if (e.pattern==='spiral') e.spiralAngle=proxy.spiralAngle;
-      e.shootTimer = easyMode ? 120 : Math.max(30,80-stage*5);
+      e.shootTimer = easyMode ? 180 : Math.max(30,80-stage*5);
     }
     // bullet hits
     let killed = false;
