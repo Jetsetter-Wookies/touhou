@@ -719,7 +719,7 @@ function updateStage() {
 // ═══════════════════════════════════════════════════════════════
 function handleInput() {
   const focused = keys['ShiftLeft']||keys['ShiftRight'];
-  const sp = focused ? 1.8 : 4+power*0.3;
+  const sp = focused ? 1.2 : 2.5+power*0.15;
   if (keys['ArrowLeft'])  player.x=Math.max(player.w/2, player.x-sp);
   if (keys['ArrowRight']) player.x=Math.min(W-player.w/2, player.x+sp);
   if (keys['ArrowUp'])    player.y=Math.max(player.h/2, player.y-sp);
