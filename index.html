@@ -411,8 +411,7 @@ const patterns = {
     for (let i=0;i<15;i++) {
       setTimeout(()=>{ eb(e, Math.cos(a)*(4+i*0.2), Math.sin(a)*(4+i*0.2), '#ff44ff', 3); }, i*40);
     }
-  }
-};
+  },
   // Baby mode patterns
   baby_aimed(e) {
     const a = Math.atan2(player.y-e.y, player.x-e.x);
