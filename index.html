@@ -167,6 +167,7 @@ const SPRITE_FILES = {
   boss_reimu:  'assets/sprites/boss_reimu.png',
   boss_marisa: 'assets/sprites/boss_marisa.png',
   boss_sakuya: 'assets/sprites/boss_sakuya.png',
+  boss_cirno:   'assets/sprites/boss_cirno.png',
   boss_yukari: 'assets/sprites/boss_yukari.png',
 };
 // Level palette sprites (tinted enemies per level)
@@ -221,7 +222,7 @@ let score=0, hiScore=100000, graze=0, power=1.0;
 let lives=3, bombs=3, frame=0, stage=1, paused=false;
 let invincible=0, bombActive=0, stageTimer=0;
 
-let player, bullets, enemies, enemyBullets, particles, items, boss;
+let player, bullets, enemies, enemyBullets, particles, items, boss, laserCharges;
 let bossActive=false, bossMaxHp=1000, bossHp=1000;
 
 const keys = {};
@@ -238,18 +239,18 @@ const BOSS_ROSTER = [
   { key:'boss_marisa', name:'霧雨 魔理沙  Kirisame Marisa', w:48, h:56,
     quip:"I borrowed some spells from a book. Don't worry about which book.",
     defeatQuip:"Ze~! That's my power you're using against me?! Not fair!" },
-  { key:'boss_sakuya', name:'十六夜 咲夜  Izayoi Sakuya',  w:48, h:56,
-    quip:"I can stop time, so dying to my bullets is entirely your own fault.",
-    defeatQuip:"...Impossible. I stopped time and you still hit me." },
+  { key:'boss_cirno',  name:'チルノ  Cirno',              w:48, h:56,
+    quip:"⑨ I'm the strongest! You'll be frozen solid in no time!",
+    defeatQuip:"N-no way! I'm the strongest! This is just a fluke!" },
   { key:'boss_yukari', name:'八雲 紫  Yakumo Yukari',      w:56, h:64,
     quip:"Oh my. A human made it this far? How novel. How unfortunate for you.",
     defeatQuip:"Fufu... how delightful. I was beginning to get bored.", newFight:true },
   { key:'boss_reimu',  name:'博麗 霊夢  Hakurei Reimu II', w:48, h:56,
     quip:"You again? Fine. I won't hold back this time.",
     defeatQuip:"This can't be real. You're cheating somehow.", newFight:true },
-  { key:'boss_marisa', name:'霧雨 魔理沙  Kirisame Marisa II', w:48, h:56,
-    quip:"Deep space, huh? Even here you won't escape Master Spark!",
-    defeatQuip:"ZE~! My best spell... defeated in deep space...", newFight:true,
+  { key:'boss_sakuya', name:'十六夜 咲夜  Izayoi Sakuya',  w:48, h:56,
+    quip:"I can stop time, so dying to my bullets is entirely your own fault.",
+    defeatQuip:"...Impossible. I stopped time and you still hit me.", newFight:true,
     teleportTaunt:"What, you think I'm just gonna sit there and take it?" },
   { key:'boss_yukari', name:'八雲 紫  Yakumo Yukari Final', w:56, h:64,
     quip:"You've come all this way. Let's see if you can survive the void.",
@@ -262,6 +263,11 @@ const BOSS_ROSTER = [
 let bossQuip = '';
 let bossQuipSpeaker = '';
 let bossQuipTimer = 0;
+
+// Stage 3 time freeze
+let timeFreeze      = false;
+let timeFreezeTimer = 0;
+let timeFreezeAlpha = 0;
 
 // background scroll
 let bgScrollY = 0;       // pixel offset into the bg image (increases downward = scroll up)
@@ -291,10 +297,11 @@ function initGame() {
   lives = babyMode ? 5 : 3; bombs=3; frame=0; stage=1;
   invincible=0; bombActive=0; stageTimer=0; scrollY=0;
   bgScrollY=0; bgPaused=false; defeatScreen=false; bossTeleporting=false;
+  timeFreeze=false; timeFreezeTimer=0; timeFreezeAlpha=0;
   bossActive=false;
   wavePhase=0; waveDelay=90; spawnQueue=[];
   player = { x:W/2, y:H-80, w:32, h:40, speed:4, shootCooldown:0 };
-  bullets=[]; enemies=[]; enemyBullets=[]; particles=[]; items=[]; boss=null;
+  bullets=[]; enemies=[]; enemyBullets=[]; particles=[]; items=[]; boss=null; laserCharges=[];
   updateUI();
   showStageBanner('STAGE 1');
 }
@@ -324,7 +331,7 @@ function drawSprite(key, x, y, w, h, alpha=1, angle=0) {
     const fallbackColors = {
       player:'#ff4488', enemy_a:'#44ccff', enemy_b:'#ffaa44',
       enemy_c:'#44ffcc', boss_reimu:'#ff2266', boss_marisa:'#ffcc00',
-      boss_sakuya:'#aabbff', boss_yukari:'#cc66ff',
+      boss_sakuya:'#aabbff', boss_yukari:'#cc66ff', boss_cirno:'#88ddff',
     };
     ctx.fillStyle = fallbackColors[key] || '#ffffff';
     ctx.fillRect(-w/2, -h/2, w, h);
@@ -603,87 +610,190 @@ function updateBossHp() {
   document.getElementById('boss-hp-bar').style.display='block';
 }
 
+// ── Laser charge helper (stages 6-7) ──────────────────────
+// A laser charge appears as a thin vertical line that grows bold over 3 seconds then fires
+function spawnLaserCharge(x) {
+  laserCharges.push({ x, life:180, maxLife:180, fired:false });
+}
+
+function updateLaserCharges() {
+  for (let i=laserCharges.length-1;i>=0;i--) {
+    const lc=laserCharges[i];
+    lc.life--;
+    if (lc.life <= 0 && !lc.fired) {
+      lc.fired=true;
+      // fire a dense column of bullets down the x position
+      for (let y=0;y<H;y+=22) {
+        enemyBullets.push({ x:lc.x, y, dx:0, dy:2.5, r:6, color:'#ff2222' });
+      }
+      laserCharges.splice(i,1);
+    }
+  }
+}
+
+function drawLaserCharges() {
+  laserCharges.forEach(lc=>{
+    const t = 1 - lc.life/lc.maxLife;  // 0→1 as it charges
+    const w = 1 + t*6;                  // thin line grows to thick
+    const alpha = 0.3 + t*0.7;
+    ctx.save();
+    ctx.strokeStyle=`rgba(255,50,50,${alpha})`;
+    ctx.lineWidth=w;
+    ctx.shadowColor='#ff2222'; ctx.shadowBlur=8*t;
+    ctx.beginPath(); ctx.moveTo(lc.x,0); ctx.lineTo(lc.x,H); ctx.stroke();
+    // warning glow at top
+    ctx.fillStyle=`rgba(255,100,50,${alpha*0.6})`;
+    ctx.beginPath(); ctx.arc(lc.x,10,4+t*6,0,Math.PI*2); ctx.fill();
+    ctx.restore();
+  });
+}
+
 function bossBehavior() {
   if (!boss) return;
   boss.moveTimer++;
+  boss.fightTimer = (boss.fightTimer||0) + 1;
 
   // Teleport dodge on hit (stages 6+ hard/extra only)
   if (bossTeleporting) {
     bossTeleportTimer--;
     if (bossTeleportTimer <= 0) { bossTeleporting = false; }
-    return; // freeze while teleporting
+    return;
   }
 
-  // New fight pattern for stages 4-7
-  if (stage >= 4 && boss.newFight) {
-    // Phase: 0=enter left, 1=fire homing stream from left, 2=move to center, 3=normal
-    if (!boss.fightPhase) boss.fightPhase = 0;
-    if (!boss.fightTimer)  boss.fightTimer  = 0;
-    boss.fightTimer++;
+  const ti = babyMode ? 4 : easyMode ? 3 : 1;
+  const be = { x:boss.x+boss.w/2, y:boss.y+boss.h/2, spiralAngle:boss.spiralAngle, ringOffset:boss.ringOffset };
+  boss.shootTimer++;
 
-    if (boss.fightPhase === 0) {
-      // Move to left side
-      boss.targetX = 20; boss.targetY = 80;
-      boss.x += (boss.targetX - boss.x) * 0.04;
-      boss.y += (boss.targetY - boss.y) * 0.04;
-      if (Math.abs(boss.x - boss.targetX) < 4) { boss.fightPhase = 1; boss.fightTimer = 0; }
-    } else if (boss.fightPhase === 1) {
-      // Fire rapid homing bullets from left side
-      boss.x += (20 - boss.x) * 0.02;
-      boss.y += (80 - boss.y) * 0.02;
-      if (boss.fightTimer % 8 === 0 && boss.fightTimer < 240) {
-        const be = { x:boss.x+boss.w/2, y:boss.y+boss.h/2 };
-        const a = Math.atan2(player.y - be.y, player.x - be.x);
-        const spd = 3.5;
-        enemyBullets.push({ x:be.x, y:be.y,
-          dx: Math.cos(a)*spd, dy: Math.sin(a)*spd,
-          r:5, color:'#ff44ff', homing:true, homingLife:45 });
-      }
-      if (boss.fightTimer >= 260) { boss.fightPhase = 2; boss.fightTimer = 0; }
-    } else if (boss.fightPhase === 2) {
-      // Move to center
-      boss.targetX = W/2 - boss.w/2; boss.targetY = 60;
-      boss.x += (boss.targetX - boss.x) * 0.03;
-      boss.y += (boss.targetY - boss.y) * 0.03;
-      if (Math.abs(boss.x - boss.targetX) < 6) { boss.fightPhase = 3; boss.fightTimer = 0; }
-    } else {
-      // Normal attack phase
-      boss.moveTimer++;
-      if (boss.moveTimer % 120 === 0) {
-        boss.targetX = 60+Math.random()*(W-120) - boss.w/2;
-        boss.targetY = 30+Math.random()*100;
-      }
-      boss.x += (boss.targetX - boss.x) * 0.02;
-      boss.y += (boss.targetY - boss.y) * 0.02;
-      // loop back
-      if (boss.fightTimer > 400) { boss.fightPhase = 0; boss.fightTimer = 0; }
-    }
-  } else {
-    if (boss.moveTimer%120===0) {
-      boss.targetX = 60+Math.random()*(W-120) - boss.w/2;
+  // ── Standard movement ──────────────────────────────────────
+  function driftMove(speed=0.02, interval=120) {
+    if (boss.moveTimer % interval === 0) {
+      boss.targetX = 60+Math.random()*(W-120)-boss.w/2;
       boss.targetY = 30+Math.random()*100;
     }
-    boss.x += (boss.targetX-boss.x)*0.02;
-    boss.y += (boss.targetY-boss.y)*0.02;
+    boss.x += (boss.targetX-boss.x)*speed;
+    boss.y += (boss.targetY-boss.y)*speed;
   }
 
-  boss.shootTimer++;
-  const phase = boss.hp<bossMaxHp*0.4?2 : boss.hp<bossMaxHp*0.7?1 : 0;
-  const be = { x:boss.x+boss.w/2, y:boss.y+boss.h/2, spiralAngle:boss.spiralAngle, ringOffset:boss.ringOffset };
+  // ── Left-side homing rush then center ─────────────────────
+  function homingRushPattern() {
+    if (!boss.fpPhase) boss.fpPhase=0;
+    boss.fpTimer = (boss.fpTimer||0)+1;
+    if (boss.fpPhase===0) {
+      boss.x += (20-boss.x)*0.05; boss.y += (80-boss.y)*0.05;
+      if (Math.abs(boss.x-20)<5) { boss.fpPhase=1; boss.fpTimer=0; }
+    } else if (boss.fpPhase===1) {
+      boss.x += (20-boss.x)*0.02; boss.y += (80-boss.y)*0.02;
+      if (boss.fpTimer%8===0 && boss.fpTimer<220) {
+        const a=Math.atan2(player.y-be.y,player.x-be.x);
+        enemyBullets.push({x:be.x,y:be.y,dx:Math.cos(a)*3.5,dy:Math.sin(a)*3.5,r:5,color:'#ff44ff',homing:true,homingLife:50});
+      }
+      if (boss.fpTimer>=240){boss.fpPhase=2;boss.fpTimer=0;}
+    } else if (boss.fpPhase===2) {
+      boss.x += (W/2-boss.w/2-boss.x)*0.04; boss.y += (60-boss.y)*0.04;
+      if (Math.abs(boss.x-(W/2-boss.w/2))<6){boss.fpPhase=0;boss.fpTimer=0;}
+    }
+  }
 
-  const ti = babyMode ? 4 : easyMode ? 3 : 1;  // interval multiplier
-  if (phase===0) {
+  // ─────────────────────────────────────────────────────────────
+  //  PER-STAGE BEHAVIOR
+  // ─────────────────────────────────────────────────────────────
+
+  if (stage === 1) {
+    // Reimu: simple drift, spread + aimed
+    driftMove(0.018);
+    if (boss.shootTimer%(35*ti)===0) patterns.aimed(be);
+    if (boss.shootTimer%(90*ti)===0) patterns.spread(be);
+    if (boss.shootTimer%(150*ti)===0) patterns.ring(be, easyMode?4:8);
+
+  } else if (stage === 2) {
+    // Marisa: drift + diagonal spread bursts
+    driftMove(0.02);
+    if (boss.shootTimer%(28*ti)===0) patterns.spread(be);
+    if (boss.shootTimer%(60*ti)===0) patterns.aimed(be);
+    if (boss.shootTimer%(110*ti)===0) {
+      // double spread burst offset
+      const be2a={...be, ringOffset:0};
+      const be2b={...be, ringOffset:Math.PI/8};
+      patterns.ring(be2a, easyMode?4:10);
+      patterns.ring(be2b, easyMode?4:10);
+    }
+
+  } else if (stage === 3) {
+    // Cirno: ice fairy – erratic movement, ring bursts, icicle volleys
+    // Erratic zigzag movement
+    if (boss.moveTimer % 60 === 0) {
+      boss.targetX = 30 + Math.random()*(W-80) - boss.w/2;
+      boss.targetY = 20 + Math.random()*120;
+    }
+    boss.x += (boss.targetX-boss.x)*0.06;
+    boss.y += (boss.targetY-boss.y)*0.06;
+    // Ice ring bursts
+    if (boss.shootTimer%(45*ti)===0) patterns.ring(be, easyMode?4:10);
+    // Aimed icicle
     if (boss.shootTimer%(30*ti)===0) patterns.aimed(be);
-    if (boss.shootTimer%(80*ti)===0) patterns.spread(be);
-  } else if (phase===1) {
-    if (boss.shootTimer%(20*ti)===0) { patterns.spiral(be); boss.spiralAngle=be.spiralAngle; }
-    if (boss.shootTimer%(100*ti)===0) patterns.ring(be, easyMode ? 4 : 16);
-    if (boss.shootTimer%(50*ti)===0) patterns.aimed(be);
-  } else {
+    // Double ring offset
+    if (boss.shootTimer%(120*ti)===0) {
+      const be2={...be, ringOffset:Math.PI/10};
+      patterns.ring(be, easyMode?4:8);
+      patterns.ring(be2, easyMode?4:8);
+    }
+    // Cirno boast: "I'm the strongest!" tint the screen icy briefly
+    if (boss.shootTimer%(300*ti)===0 && !timeFreeze) {
+      timeFreeze=true; timeFreezeTimer=90; // shorter freeze
+    }
+
+  } else if (stage === 4) {
+    // Yukari: gaps + ring barrages from sides
+    driftMove(0.018,100);
+    if (boss.shootTimer%(22*ti)===0) { patterns.spiral(be); boss.spiralAngle=be.spiralAngle; }
+    if (boss.shootTimer%(80*ti)===0) patterns.ring(be, easyMode?4:14);
+    if (boss.shootTimer%(40*ti)===0) patterns.aimed(be);
+    // Phase: occasionally do homing rush
+    if (boss.shootTimer%(350*ti)===0) { boss.fpPhase=0; boss.fpTimer=0; }
+    if (boss.fpPhase!==undefined && boss.fpTimer>0) homingRushPattern();
+
+  } else if (stage === 5) {
+    // Reimu II: spiral walls + homing rush loop
+    homingRushPattern();
+    if (boss.shootTimer%(18*ti)===0) { patterns.spiral(be); boss.spiralAngle=be.spiralAngle; }
+    if (boss.shootTimer%(55*ti)===0) patterns.aimed(be);
+    if (boss.shootTimer%(120*ti)===0) patterns.ring(be, easyMode?4:16);
+
+  } else if (stage === 6) {
+    // Sakuya: TIME FREEZE + homing rush + laser charges
+    homingRushPattern();
+    if (boss.shootTimer%(22*ti)===0) { patterns.spiral(be); boss.spiralAngle=be.spiralAngle; }
+    if (boss.shootTimer%(40*ti)===0) patterns.aimed(be);
+    if (boss.shootTimer%(90*ti)===0) patterns.spread(be);
+    // TIME FREEZE trigger
+    if (boss.shootTimer%(350*ti)===0 && !timeFreeze) {
+      timeFreeze=true; timeFreezeTimer=210; // 3.5 seconds at stage 6
+    }
+    // Laser charges
+    if (boss.shootTimer%(170*ti)===0) {
+      spawnLaserCharge(W*0.25);
+      queueSpawn(30, ()=>spawnLaserCharge(W*0.75));
+    }
+    if (boss.shootTimer%(260*ti)===0) {
+      spawnLaserCharge(W*0.1);
+      queueSpawn(25, ()=>spawnLaserCharge(W*0.5));
+      queueSpawn(50, ()=>spawnLaserCharge(W*0.9));
+    }
+
+  } else if (stage === 7) {
+    // Yukari Final: everything + dense lasers (replaces old stage 7 slot)
+    homingRushPattern();
     if (boss.shootTimer%(15*ti)===0) { patterns.spiral(be); boss.spiralAngle=be.spiralAngle; }
-    if (boss.shootTimer%(60*ti)===0) patterns.ring(be, easyMode ? 4 : 20);
-    if (boss.shootTimer%(25*ti)===0) patterns.aimed(be);
-    if (boss.shootTimer%(200*ti)===0) patterns.laser(be);
+    if (boss.shootTimer%(30*ti)===0) patterns.aimed(be);
+    if (boss.shootTimer%(90*ti)===0) patterns.ring(be, easyMode?4:20);
+    // More frequent and triple laser charges
+    if (boss.shootTimer%(120*ti)===0) {
+      const positions=[W*0.15,W*0.5,W*0.85];
+      positions.forEach((px,i)=>queueSpawn(i*20,()=>spawnLaserCharge(px)));
+    }
+    if (boss.shootTimer%(200*ti)===0) {
+      [W*0.08,W*0.3,W*0.6,W*0.92].forEach((px,i)=>queueSpawn(i*15,()=>spawnLaserCharge(px)));
+    }
   }
 
   bossHp = boss.hp;
@@ -814,6 +924,8 @@ function updateEnemies() {
 function updateBullets() {
   for (let i=bullets.length-1;i>=0;i--) {
     const b=bullets[i];
+    // Time freeze: stop non-orb player bullets (orb homing unaffected)
+    if (timeFreeze && b.type !== 'homing' && b.type !== 'orb') continue;
     b.x+=b.dx; b.y+=b.dy;
     if (b.y<-20||b.x<-20||b.x>W+20) { bullets.splice(i,1); continue; }
     if (bossActive&&boss && dist(b.x,b.y, boss.x+boss.w/2, boss.y+boss.h/2)<boss.w/2) {
@@ -998,7 +1110,7 @@ function handleInput() {
   if (keys['ArrowDown'])  player.y=Math.min(H-player.h/2, player.y+sp);
 
   player.shootCooldown--;
-  if (keys['KeyZ']&&player.shootCooldown<=0) {
+  if (keys['KeyZ']&&player.shootCooldown<=0 && !timeFreeze) {
     playerShoot(); player.shootCooldown=Math.max(2,6-Math.floor(power));
   }
   if (keys['KeyX']&&bombs>0&&bombActive<=0) {
@@ -1438,11 +1550,18 @@ function loop() {
   if (bombActive>0) bombActive--;
 
   if (defeatScreen) { updateDefeatScreen(); drawBG(); drawDefeatScreen(); return; }
+  // Time freeze tick
+  if (timeFreeze) {
+    timeFreezeTimer--;
+    timeFreezeAlpha = Math.min(0.35, timeFreezeAlpha + 0.04);
+    if (timeFreezeTimer <= 0) { timeFreeze=false; timeFreezeAlpha=0; }
+  }
   handleInput();
   updateOrbs();
   updateHomingBullets();
   updateStage();
   if (bossActive) bossBehavior();
+  updateLaserCharges();
   updateEnemies();
   updateBullets();
   updateEnemyBullets();
@@ -1455,8 +1574,26 @@ function loop() {
   drawEnemyBullets();
   drawEnemies();
   drawBoss();
+  drawLaserCharges();
   drawBullets();
   drawPlayer();
+  // Time freeze blue tint overlay
+  if (timeFreezeAlpha > 0) {
+    ctx.save();
+    ctx.fillStyle=`rgba(30,100,220,${timeFreezeAlpha})`;
+    ctx.fillRect(0,0,W,H);
+    // frost edge vignette
+    const grad=ctx.createRadialGradient(W/2,H/2,H*0.3,W/2,H/2,H*0.75);
+    grad.addColorStop(0,'rgba(0,60,160,0)');
+    grad.addColorStop(1,`rgba(0,30,120,${timeFreezeAlpha*0.8})`);
+    ctx.fillStyle=grad; ctx.fillRect(0,0,W,H);
+    // "TIME STOPPED" text
+    ctx.fillStyle=`rgba(180,220,255,${timeFreezeAlpha*2})`;
+    ctx.font='bold 14px "Noto Serif JP"';
+    ctx.textAlign='center';
+    ctx.fillText('⏸ TIME STOPPED', W/2, H/2);
+    ctx.restore();
+  }
   drawBossQuip();
   drawTeleportTaunt();
   drawDefeatScreen();
