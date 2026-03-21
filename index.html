@@ -194,9 +194,11 @@ for (let lvl=1;lvl<=7;lvl++) {
 }
 
 let spritesLoaded = 0;
-const totalSprites = Object.keys(SPRITE_FILES).length;
+let totalSprites = 0; // set inside loadSprites after all keys are registered
 
 function loadSprites(callback) {
+  // Count AFTER the for-loops above have populated SPRITE_FILES
+  totalSprites = Object.keys(SPRITE_FILES).length;
   Object.entries(SPRITE_FILES).forEach(([key, src]) => {
     const img = new Image();
     img.onload  = () => { SPRITES[key] = img; spritesLoaded++; if (spritesLoaded === totalSprites) callback(); };
@@ -1824,7 +1826,7 @@ const MUSIC_TRACKS = [
   { id:'s1_boss', label:'Stage 1 Boss - Hakurei Reimu', src:'assets/music/level 1/boss.mp3', locked:false },
   { id:'s2_stage',label:'Stage 2 - Ocean Crossing', src:'assets/music/level 2/stage.mp3', locked:false },
   { id:'s2_boss', label:'Stage 2 Boss - Kirisame Marisa', src:'assets/music/level 2/boss.mp3', locked:false },
-  { id:'s3_stage',label:'Stage 3 - Desert Winds', src:'assets/music/level 3/stage.mp3', locked:false },
+  { id:'s3_stage',label:'Stage 3 - Frozen Desert', src:'assets/music/level 3/stage.mp3', locked:false },
   { id:'s3_boss', label:'Stage 3 Boss - Cirno', src:'assets/music/level 3/boss.mp3', locked:false },
   { id:'s4_stage',label:'Stage 4 - Above the Clouds', src:'assets/music/level 4/stage.mp3', locked:false },
   { id:'s4_boss', label:'Stage 4 Boss - Yakumo Yukari', src:'assets/music/level 4/boss.mp3', locked:false },
