@@ -415,12 +415,12 @@ const patterns = {
   // Baby mode patterns
   baby_aimed(e) {
     const a = Math.atan2(player.y-e.y, player.x-e.x);
-    eb(e, Math.cos(a)*1.0, Math.sin(a)*1.0, '#ffaa00', 4);
+    eb(e, Math.cos(a)*2.2, Math.sin(a)*2.2, '#ffaa00', 4);
   },
   baby_cross(e) {
     // 4 bullets: up, down, left, right
     [[0,-1],[0,1],[-1,0],[1,0]].forEach(([dx,dy])=>{
-      eb(e, dx*1.2, dy*1.2, '#ff88cc', 4);
+      eb(e, dx*2.2, dy*2.2, '#ff88cc', 4);
     });
   },
   baby_silent(e) { /* enemy_c in baby mode: no bullets */ }
@@ -515,7 +515,7 @@ function spawnEnemy(sprKey, x, y, vx, vy, pattern, hp, sc, extra={}) {
   }
   const sizes = { enemy_a:{w:24,h:24}, enemy_b:{w:28,h:28}, enemy_c:{w:32,h:32} };
   const s = sizes[sprKey]||{w:24,h:24};
-  const initTimer = (easyMode||babyMode) ? 120 + Math.floor(Math.random()*180) : 80;
+  const initTimer = babyMode ? 60 + Math.floor(Math.random()*60) : easyMode ? 120 + Math.floor(Math.random()*180) : 80;
   enemies.push({ sprKey, x, y, vx, vy, pattern, hp, maxHp:hp, score:sc,
                  w:s.w, h:s.h, shootTimer:initTimer, ...extra });
 }
@@ -640,7 +640,7 @@ function updateEnemies() {
           if (e.pattern==='spiral') e.spiralAngle=proxy.spiralAngle;
         }
       }
-      e.shootTimer = (easyMode||babyMode) ? 180 : Math.max(30,80-stage*5);
+      e.shootTimer = babyMode ? 80 : easyMode ? 180 : Math.max(30,80-stage*5);
     }
     // bullet hits
     let killed = false;
