@@ -853,17 +853,27 @@ function bossBehavior() {
     if (boss.shootTimer%(90*ti)===0) patterns.spread(be);
     // TIME FREEZE trigger
     if (boss.shootTimer%(350*ti)===0 && !timeFreeze) {
-      timeFreeze=true; timeFreezeTimer=210; // 3.5 seconds at stage 6
+      timeFreeze=true; timeFreezeTimer=210;
     }
-    // Laser charges
-    if (boss.shootTimer%(170*ti)===0) {
-      spawnLaserCharge(W*0.25);
-      queueSpawn(30, ()=>spawnLaserCharge(W*0.75));
-    }
-    if (boss.shootTimer%(260*ti)===0) {
-      spawnLaserCharge(W*0.1);
-      queueSpawn(25, ()=>spawnLaserCharge(W*0.5));
-      queueSpawn(50, ()=>spawnLaserCharge(W*0.9));
+    // LASER SWEEP – only past 50% HP, random interval, sweeps full screen L→R
+    if (boss.hp < bossMaxHp * 0.5) {
+      // Pick a random interval each time: 180-320 frames
+      if (!boss.laserNextAt) boss.laserNextAt = boss.shootTimer + 180 + Math.floor(Math.random()*140);
+      if (boss.shootTimer >= boss.laserNextAt) {
+        boss.laserNextAt = boss.shootTimer + (180 + Math.floor(Math.random()*140)) * ti;
+        // Divide screen into 6 evenly-spaced columns, fire L→R alternating
+        const cols = 6;
+        const gap  = Math.floor(W / cols);
+        for (let ci = 0; ci < cols; ci++) {
+          const px = gap * ci + gap / 2;
+          // Stagger each column: first fires immediately, next waits,
+          // alternating so odd columns fire after even ones
+          const delay = (ci % 2 === 0)
+            ? ci * 22          // even columns: 0, 44, 88 frames
+            : (ci - 1) * 22 + 11; // odd columns: 11, 55, 99 frames
+          queueSpawn(delay, () => spawnLaserCharge(px));
+        }
+      }
     }
 
   } else if (stage === 7) {
@@ -909,7 +919,7 @@ function bossBehavior() {
 }
 
 function advanceAfterBoss() {
-  const maxStage = (hardMode || trueMode) ? 7 : 6;
+  const maxStage = trueMode ? 7 : 6;  // stage 7 is True mode exclusive
   bgPaused = false;
   if (stage >= maxStage) {
     musicOnVictory();
@@ -1023,7 +1033,7 @@ function updateBullets() {
     if (bossActive&&boss && dist(b.x,b.y, boss.x+boss.w/2, boss.y+boss.h/2)<boss.w/2) {
       boss.hp-=b.dmg; bullets.splice(i,1); spawnParticle(b.x,b.y,'#ffcc44',2);
       // Teleport dodge for stage 6+ in hard/extra mode
-      if (stage >= 6 && (hardMode||trueMode) && !bossTeleporting && Math.random() < 0.18) {
+      if (stage >= 6 && trueMode && !bossTeleporting && Math.random() < 0.18) {
         bossTeleporting = true;
         bossTeleportTimer = 40;
         boss.x = 30 + Math.random() * (W - 90);
@@ -2159,18 +2169,16 @@ function launchDebug() {
 
   document.getElementById('debug-menu').style.display = 'none';
 
-  // Set mode flags
-  trueMode=false; hardMode=false; easyMode=false; babyMode=false;
-  if (mode==='true')   { trueMode=true; }
-  else if (mode==='hard')  { hardMode=true; }
-  else if (mode==='normal'){ easyMode=true; }
-  else                     { babyMode=true; }
+  // Use the real start functions so all mode rules apply correctly
+  if (mode === 'true')        startTrueMode();
+  else if (mode === 'hard')   startGame();
+  else if (mode === 'normal') startEasyMode();
+  else                        startBabyMode();
 
-  initGame();
-  // Override after init
-  stage   = stageN;
-  lives   = livesN;
-  power   = powerN;
+  // Override stage/lives/power after the mode's initGame() ran
+  stage  = stageN;
+  lives  = livesN;
+  power  = powerN;
   debugInfiniteLives = infLives;
   bgScrollY = 0;
   wavePhase=0; waveDelay=90; spawnQueue=[];
@@ -2178,7 +2186,6 @@ function launchDebug() {
   showStageBanner('DBG: STAGE ' + stageN);
   musicOnStageStart(stageN);
   updateUI();
-  state = 'playing';
 }
 
 // Infinite lives patch (applied at playerHit call site via wrapper)
