@@ -432,9 +432,10 @@ let bossActive=false, bossMaxHp=1000, bossHp=1000;
 
 const keys = {};
 document.addEventListener('keydown', e=>{
-  // Don't intercept when typing in an input/select field
   const tag = document.activeElement && document.activeElement.tagName;
   if (tag === 'INPUT' || tag === 'SELECT' || tag === 'TEXTAREA') return;
+  // Ignore key-repeat events — movement is polled every frame, not event-driven
+  if (e.repeat) { e.preventDefault(); return; }
   keys[e.code]=true; e.preventDefault();
 });
 document.addEventListener('keyup', e=>{
@@ -1370,10 +1371,11 @@ function updateStage() {
 function handleInput() {
   const focused = keys['ShiftLeft']||keys['ShiftRight'];
   const sp = focused ? 1.2 : 2.5+power*0.15;
-  if (keys['ArrowLeft'])  player.x=Math.max(player.w/2, player.x-sp);
-  if (keys['ArrowRight']) player.x=Math.min(W-player.w/2, player.x+sp);
-  if (keys['ArrowUp'])    player.y=Math.max(player.h/2, player.y-sp);
-  if (keys['ArrowDown'])  player.y=Math.min(H-player.h/2, player.y+sp);
+  // Merge keyboard and joystick — joystick lives in joyKeys to avoid stacking
+  if (keys['ArrowLeft']  || joyKeys['ArrowLeft'])  player.x=Math.max(player.w/2, player.x-sp);
+  if (keys['ArrowRight'] || joyKeys['ArrowRight']) player.x=Math.min(W-player.w/2, player.x+sp);
+  if (keys['ArrowUp']    || joyKeys['ArrowUp'])    player.y=Math.max(player.h/2, player.y-sp);
+  if (keys['ArrowDown']  || joyKeys['ArrowDown'])  player.y=Math.min(H-player.h/2, player.y+sp);
 
   player.shootCooldown--;
   if (power >= 5.0 && !timeFreeze) {
@@ -2968,6 +2970,7 @@ const JOYSTICK_DEAD = 0.15;  // deadzone fraction of radius
 const JOYSTICK_R = 70;       // base radius in CSS px (scaled by DPI)
 
 let joyActive   = false;
+const joyKeys = { ArrowUp:false, ArrowDown:false, ArrowLeft:false, ArrowRight:false };
 let joyOriginX  = 0;
 let joyOriginY  = 0;
 let joyThumbX   = 0;
@@ -3021,8 +3024,7 @@ function setupJoystick() {
     if (e.pointerId !== joyPointerId) return;
     joyActive    = false;
     joyPointerId = null;
-    // Clear all movement keys
-    keys['ArrowUp'] = keys['ArrowDown'] = keys['ArrowLeft'] = keys['ArrowRight'] = false;
+    joyKeys['ArrowUp'] = joyKeys['ArrowDown'] = joyKeys['ArrowLeft'] = joyKeys['ArrowRight'] = false;
     drawJoystick();
   }
   zone.addEventListener('pointerup',     joyEnd, { passive:false });
@@ -3040,7 +3042,7 @@ function updateJoyKeys() {
 
   // Deadzone
   if (norm < JOYSTICK_DEAD) {
-    keys['ArrowUp'] = keys['ArrowDown'] = keys['ArrowLeft'] = keys['ArrowRight'] = false;
+    joyKeys['ArrowUp'] = joyKeys['ArrowDown'] = joyKeys['ArrowLeft'] = joyKeys['ArrowRight'] = false;
     return;
   }
 
@@ -3048,10 +3050,11 @@ function updateJoyKeys() {
   const ny = dy / Math.max(dist, 1);
   const threshold = 0.4; // how far to tilt before registering axis
 
-  keys['ArrowLeft']  = nx < -threshold;
-  keys['ArrowRight'] = nx >  threshold;
-  keys['ArrowUp']    = ny < -threshold;
-  keys['ArrowDown']  = ny >  threshold;
+  // Write to joyKeys only — never touch the keyboard keys object
+  joyKeys['ArrowLeft']  = nx < -threshold;
+  joyKeys['ArrowRight'] = nx >  threshold;
+  joyKeys['ArrowUp']    = ny < -threshold;
+  joyKeys['ArrowDown']  = ny >  threshold;
 
   // Also handle menu navigation from joystick
   if (state !== 'playing') {
