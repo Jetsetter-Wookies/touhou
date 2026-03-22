@@ -97,6 +97,15 @@
   }
 
   /* ── Fullscreen button ── */
+  #home-btn {
+    position:fixed; top:8px; left:8px; z-index:200;
+    background:#0d0018cc; border:1px solid #553377;
+    color:#cc44ff; font-size:18px; width:36px; height:36px;
+    cursor:pointer; border-radius:4px; display:none;
+    align-items:center; justify-content:center; line-height:1;
+    touch-action:manipulation;
+  }
+  #home-btn:hover { background:#2a0044; }
   #fullscreen-btn {
     position:fixed; top:8px; right:8px; z-index:200;
     background:#0d0018cc; border:1px solid #553377;
@@ -170,6 +179,8 @@
 
 <!-- Fullscreen button -->
 <button id="fullscreen-btn" onclick="toggleFullscreen()" title="Fullscreen">⛶</button>
+<!-- Home button -->
+<button id="home-btn" onclick="goHome()" title="Return to Title">⌂</button>
 
 <!-- Joystick zone – separate from mobile-controls, covers left half -->
 <div id="joystick-zone"><canvas id="joystick-canvas"></canvas></div>
@@ -1957,7 +1968,7 @@ function loop() {
   drawDefeatScreen();
   drawHUD();
 
-  if (frame-lastUIFrame>10) { updateUI(); lastUIFrame=frame; }
+  if (frame-lastUIFrame>10) { updateUI(); updateHomeBtnVisibility(); lastUIFrame=frame; }
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -2027,6 +2038,7 @@ function showTitle() {
   document.getElementById('gameover-screen').style.display='none';
   document.getElementById('victory-screen').style.display='none';
   document.getElementById('title-screen').style.display='flex';
+  updateHomeBtnVisibility();
   if (_musicStarted) musicOnTitle();
   renderTitleHiScores();
   const eb = document.getElementById('title-extra-btn');
@@ -2874,6 +2886,30 @@ function stopFlandreMusic() {
 // ═══════════════════════════════════════════════════════════════
 //  FULLSCREEN
 // ═══════════════════════════════════════════════════════════════
+
+// ── Home button ──────────────────────────────────────────────
+function goHome() {
+  // Keep score as hi-score candidate but return to title
+  if (score > hiScore) hiScore = score;
+  saveHiScore(getModeKey(), score);
+  // Reset game state cleanly
+  state = 'title';
+  bossActive = false; boss = null;
+  flandreActive = false; flandre = null;
+  defeatScreen = false; paused = false;
+  enemyBullets = []; enemies = []; bullets = []; items = [];
+  document.getElementById('boss-section').style.display = 'none';
+  MusicPlayer.fadeOut(600);
+  setTimeout(()=>{ showTitle(); }, 100);
+}
+
+function updateHomeBtnVisibility() {
+  const btn = document.getElementById('home-btn');
+  if (!btn) return;
+  // Show only while playing (not on title/gameover/victory screens)
+  btn.style.display = (state === 'playing') ? 'flex' : 'none';
+}
+
 function toggleFullscreen() {
   if (!document.fullscreenElement) {
     (document.documentElement.requestFullscreen ||
