@@ -254,6 +254,7 @@ for (let lvl=1;lvl<=7;lvl++) {
 for (let lvl=1;lvl<=7;lvl++) {
   SPRITE_FILES[`bg${lvl}`] = `assets/backgrounds/bg${lvl}.png`;
 }
+SPRITE_FILES['bg8'] = 'assets/backgrounds/bg8.png'; // Flandre void stage
 
 let spritesLoaded = 0;
 let totalSprites = 0; // set inside loadSprites after all keys are registered
@@ -1285,7 +1286,7 @@ const stars = Array.from({length:80},()=>({
 }));
 
 function drawBG() {
-  const lvl = Math.min(stage, 7);
+  const lvl = flandreActive ? 8 : Math.min(stage, 7);
   const bgImg = SPRITES[`bg${lvl}`];
 
   if (bgImg && bgImg.complete && bgImg.naturalHeight > 0) {
