@@ -21,14 +21,7 @@
     display:flex; position:relative;
     transform-origin:center center;
   }
-  /* Scale game to fit landscape mobile screens */
-  @media (max-width:640px) {
-    body { align-items:flex-start; padding-top:4px; }
-    #wrapper {
-      transform: scale(var(--game-scale, 1));
-      transform-origin: top center;
-    }
-  }
+  /* Scale applied via JS for touch devices */
   #gameCanvas {
     display:block;
     border:2px solid #cc44ff;
@@ -116,7 +109,7 @@
 
   /* ── Mobile D-pad + buttons ── */
   #mobile-controls {
-    display:none;
+    display:none;  /* JS will set to block if touch device */
     position:fixed; bottom:0; left:0; width:100%; z-index:100;
     pointer-events:none;
     padding:10px 12px 16px;
@@ -165,9 +158,7 @@
   #btn-slow  { background:#ffdd4433; border-color:#ffdd44; color:#ffee88; width:46px; height:46px; font-size:10px; }
   #btn-pause { background:#33333344; border-color:#666; color:#aaa; width:36px; height:36px; font-size:10px; border-radius:6px; }
 
-  @media (max-width:640px) {
-    #mobile-controls { display:block; }
-  }
+  /* mobile-controls shown via JS based on touch capability */
 
 </style>
 </head>
@@ -2911,11 +2902,12 @@ document.addEventListener('fullscreenchange', ()=>{
 //  ROTATE OVERLAY
 // ═══════════════════════════════════════════════════════════════
 function checkOrientation() {
-  const isMobile = /Mobi|Android|iPhone|iPad|iPod/i.test(navigator.userAgent)
-    || window.innerWidth <= 900;
   const isPortrait = window.innerHeight > window.innerWidth;
   const overlay = document.getElementById('rotate-overlay');
-  if (overlay) overlay.style.display = (isMobile && isPortrait) ? 'flex' : 'none';
+  if (overlay) overlay.style.display = (isTouchDevice() && isPortrait) ? 'flex' : 'none';
+  // Also ensure controls are visible on touch devices
+  const mc = document.getElementById('mobile-controls');
+  if (mc && isTouchDevice()) mc.style.display = 'block';
 }
 window.addEventListener('resize', checkOrientation);
 window.addEventListener('orientationchange', checkOrientation);
@@ -2925,6 +2917,11 @@ checkOrientation();
 //  MOBILE VIRTUAL CONTROLS – inject touch events into keys map
 // ═══════════════════════════════════════════════════════════════
 function setupMobileControls() {
+  // Show controls on any touch-capable device regardless of screen size
+  if (isTouchDevice()) {
+    const mc = document.getElementById('mobile-controls');
+    if (mc) mc.style.display = 'block';
+  }
   const btns = document.querySelectorAll('.dp-btn[data-key], .act-btn[data-key]');
   btns.forEach(btn => {
     const k = btn.dataset.key;
@@ -3022,9 +3019,19 @@ const _menuObserver = new MutationObserver(() => { menuFocusIdx = 0; menuFocus(0
 setupMobileControls();
 
 // Scale game canvas to fit mobile screen in landscape
+function isTouchDevice() {
+  return ('ontouchstart' in window) || (navigator.maxTouchPoints > 0) || (navigator.msMaxTouchPoints > 0);
+}
+
 function applyMobileScale() {
-  const isMobile = window.innerWidth <= 900;
-  if (!isMobile) { document.getElementById('wrapper').style.transform=''; return; }
+  const mc = document.getElementById('mobile-controls');
+  if (isTouchDevice()) {
+    if (mc) mc.style.display = 'block';
+  }
+  if (!isTouchDevice() && window.innerWidth > 900) {
+    document.getElementById('wrapper').style.transform='';
+    return;
+  }
   const wrapper = document.getElementById('wrapper');
   const totalW = 384 + 160; // canvas + sidebar
   const totalH = 448;
