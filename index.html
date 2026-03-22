@@ -2921,10 +2921,10 @@ function setupMobileControls() {
   const dpr = window.devicePixelRatio || 1;
   // Target physical size: FIRE=14mm, BOMB/FOCUS=12mm, PAUSE=9mm
   // 1mm ≈ 3.78px at 96dpi; real screens vary — use dpr as a proxy
-  const physBase = Math.round(56 * Math.max(1, Math.min(dpr, 2.5)));
-  const physSm   = Math.round(46 * Math.max(1, Math.min(dpr, 2.5)));
-  const physTiny = Math.round(36 * Math.max(1, Math.min(dpr, 2.5)));
-  const fsize    = Math.round(11 * Math.max(1, Math.min(dpr, 2)));
+  const physBase = Math.round(52 * Math.min(dpr, 1.5));
+  const physSm   = Math.round(42 * Math.min(dpr, 1.5));
+  const physTiny = Math.round(32 * Math.min(dpr, 1.5));
+  const fsize    = Math.round(11 * Math.min(dpr, 1.4));
 
   document.getElementById('btn-fire') .style.cssText += `;width:${physBase}px;height:${physBase}px;font-size:${fsize}px`;
   document.getElementById('btn-bomb') .style.cssText += `;width:${physBase}px;height:${physBase}px;font-size:${fsize}px`;
@@ -2967,7 +2967,7 @@ function setupMobileControls() {
 // and drag to set direction. Release clears all movement keys.
 
 const JOYSTICK_DEAD = 0.15;  // deadzone fraction of radius
-const JOYSTICK_R = 70;       // base radius in CSS px (scaled by DPI)
+const JOYSTICK_R = 48;       // base radius in CSS px — kept small deliberately
 
 let joyActive   = false;
 const joyKeys = { ArrowUp:false, ArrowDown:false, ArrowLeft:false, ArrowRight:false };
@@ -3044,7 +3044,7 @@ function setupJoystick() {
 function updateJoyKeys() {
   if (!joyActive) return;
   const dpr = window.devicePixelRatio || 1;
-  const radius = JOYSTICK_R * Math.max(1, Math.min(dpr, 2.5));
+  const radius = JOYSTICK_R * Math.min(dpr, 1.3);
   const dx = joyThumbX - joyOriginX;
   const dy = joyThumbY - joyOriginY;
   const dist = Math.sqrt(dx*dx + dy*dy);
@@ -3078,7 +3078,7 @@ function drawJoystick() {
   if (!canvas) return;
   const ctx2 = canvas.getContext('2d');
   const dpr  = window.devicePixelRatio || 1;
-  const radius = JOYSTICK_R * Math.max(1, Math.min(dpr, 2.5)) * dpr;
+  const radius = JOYSTICK_R * Math.min(dpr, 1.3) * dpr;
 
   ctx2.clearRect(0, 0, canvas.width, canvas.height);
   if (!joyActive) {
