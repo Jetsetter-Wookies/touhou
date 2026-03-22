@@ -197,6 +197,7 @@
         <option value="3">Stage 3</option><option value="4">Stage 4</option>
         <option value="5">Stage 5</option><option value="6">Stage 6</option>
         <option value="7">Stage 7</option>
+        <option value="99">👻 Phantom Flandre [DEBUG]</option>
       </select>
       <div style="color:#88ff88;font-size:11px;padding-top:6px;">LIVES:</div>
       <div style="display:flex;gap:6px;align-items:center;">
@@ -240,6 +241,7 @@ const SPRITE_FILES = {
   boss_marisa: 'assets/sprites/boss_marisa.png',
   boss_sakuya: 'assets/sprites/boss_sakuya.png',
   boss_cirno:   'assets/sprites/boss_cirno.png',
+  boss_flandre: 'assets/sprites/boss_flandre.png',
   boss_yukari: 'assets/sprites/boss_yukari.png',
 };
 // Level palette sprites (tinted enemies per level)
@@ -348,6 +350,17 @@ let bossQuip = '';
 let bossQuipSpeaker = '';
 let bossQuipTimer = 0;
 
+// Flandre debug boss
+let flandreActive    = false;
+let flandreHp        = 0;
+let flandreMaxHp     = 8000;
+let flandre          = null;     // boss object
+let flandrePhase     = 0;        // 0=offscreen, 1=wave, 2=fight, 3=rage
+let flandreTimer     = 0;
+let flandreTintRed   = 0;        // frames of red tint (when hit by lv5 bullet)
+let chargeHeld       = 0;        // frames Z held for lv5 charge shot
+let chargeFired      = false;    // prevents rapid refiring
+let lv5Unlocked      = false;    // player has picked up blue diamond
 // Stage 3 time freeze
 let timeFreeze      = false;
 let timeFreezeTimer = 0;
@@ -382,6 +395,7 @@ function initGame() {
   invincible=0; bombActive=0; stageTimer=0; scrollY=0;
   bgScrollY=0; bgPaused=false; defeatScreen=false; bossTeleporting=false;
   timeFreeze=false; timeFreezeTimer=0; timeFreezeAlpha=0;
+  flandreActive=false; flandre=null; flandrePhase=0; flandreTimer=0; flandreTintRed=0; chargeHeld=0; lv5Unlocked=false; laserCharges=[];
   bossActive=false;
   wavePhase=0; waveDelay=90; spawnQueue=[];
   player = { x:W/2, y:H-80, w:32, h:40, speed:4, shootCooldown:0 };
@@ -416,7 +430,7 @@ function drawSprite(key, x, y, w, h, alpha=1, angle=0) {
     const fallbackColors = {
       player:'#ff4488', enemy_a:'#44ccff', enemy_b:'#ffaa44',
       enemy_c:'#44ffcc', boss_reimu:'#ff2266', boss_marisa:'#ffcc00',
-      boss_sakuya:'#aabbff', boss_yukari:'#cc66ff', boss_cirno:'#88ddff',
+      boss_sakuya:'#aabbff', boss_yukari:'#cc66ff', boss_cirno:'#88ddff', boss_flandre:'#ff2244',
     };
     ctx.fillStyle = fallbackColors[key] || '#ffffff';
     ctx.fillRect(-w/2, -h/2, w, h);
@@ -430,6 +444,7 @@ function drawSprite(key, x, y, w, h, alpha=1, angle=0) {
 //  Tier 2 (power 1.5–2.4): double stream
 //  Tier 3 (power 2.5–3.4): double stream + side orbs shoot straight up
 //  Tier 4 (power >=3.5): double stream + side orbs shoot HOMING bullets
+//  Tier 5 (power 5.0): CHARGE SHOT – hold Z 1 second, fire giant red bullet
 // ═══════════════════════════════════════════════════════════════
 
 // Side orb state – positions animate outward at higher power
@@ -447,6 +462,7 @@ function getOrbPos(orb) {
 }
 
 function playerShoot() {
+  if (power >= 5.0) return;  // tier 5 uses charge system, not auto-fire
   // ── Tier 1: single stream ──
   if (power < 1.5) {
     bullets.push({ x:player.x, y:player.y-14, dx:0, dy:-8, dmg:12, type:'laser' });
@@ -1026,6 +1042,23 @@ function updateBullets() {
     if (timeFreeze && b.type !== 'homing' && b.type !== 'orb') continue;
     b.x+=b.dx; b.y+=b.dy;
     if (b.y<-20||b.x<-20||b.x>W+20) { bullets.splice(i,1); continue; }
+    // Charge5 hits Flandre only (immune to normal shots)
+    if (b.type==='charge5' && flandreActive && flandre) {
+      if (dist(b.x,b.y, flandre.x+flandre.w/2, flandre.y+flandre.h/2) < flandre.w/2+10) {
+        flandre.hp -= b.dmg;
+        bullets.splice(i,1);
+        for(let pp=0;pp<20;pp++) spawnParticle(b.x,b.y,'#ff2222',8);
+        flandreTintRed = 90;
+        power = 4.0; lv5Unlocked = false;  // strip lv5 on hit
+        continue;
+      }
+    }
+    // Normal shots don't damage Flandre
+    if (flandreActive && flandre && b.type !== 'charge5') {
+      if (dist(b.x,b.y, flandre.x+flandre.w/2, flandre.y+flandre.h/2) < flandre.w/2) {
+        spawnParticle(b.x,b.y,'#440000',2); bullets.splice(i,1); continue;
+      }
+    }
     if (bossActive&&boss && dist(b.x,b.y, boss.x+boss.w/2, boss.y+boss.h/2)<boss.w/2) {
       boss.hp-=b.dmg; bullets.splice(i,1); spawnParticle(b.x,b.y,'#ffcc44',2);
       // Teleport dodge for stage 6+ in hard/extra mode
@@ -1106,7 +1139,11 @@ function updateItems() {
     it.y+=it.vy;
     if (it.y>H+10) { items.splice(i,1); continue; }
     if (dist(it.x,it.y,player.x,player.y)<18) {
-      if (it.type==='power') { power=Math.min(4,power+0.2); score+=50; }
+      if (it.type==='bluediamond') {
+        power = 5.0; lv5Unlocked = true; score+=500;
+        for(let p=0;p<12;p++) spawnParticle(it.x,it.y,'#4488ff',6);
+      }
+      else if (it.type==='power') { power=Math.min(4,power+0.2); score+=50; }
       else if (it.type==='life') {
         const cap = babyMode ? 7 : Infinity;
         if (lives < cap) { lives++; updateUI(); }
@@ -1208,7 +1245,26 @@ function handleInput() {
   if (keys['ArrowDown'])  player.y=Math.min(H-player.h/2, player.y+sp);
 
   player.shootCooldown--;
-  if (keys['KeyZ']&&player.shootCooldown<=0 && !timeFreeze) {
+  if (power >= 5.0 && !timeFreeze) {
+    // Tier 5: hold Z to charge, release to fire — any release fires
+    if (keys['KeyZ']) {
+      chargeHeld = Math.min(chargeHeld + 1, 60); // cap at 60 frames (full charge)
+      chargeFired = false;
+    } else if (chargeHeld > 0 && !chargeFired) {
+      // Scale damage and size by how long Z was held (min 5 frames = tiny, 60 = max)
+      const chargePct = Math.min(chargeHeld / 60, 1);
+      const dmg  = Math.max(50, Math.floor(800 * chargePct));
+      const rad  = 4 + Math.floor(12 * chargePct);
+      const spd  = 5 + 3 * (1 - chargePct);  // faster when undercharged, slower when full
+      bullets.push({ x:player.x, y:player.y-20, dx:0, dy:-spd,
+        dmg, type:'charge5', r:rad, chargePct });
+      for(let i=0;i<Math.floor(8*chargePct)+3;i++) spawnParticle(player.x, player.y,'#ff2222',6);
+      chargeHeld = 0;
+      chargeFired = true;
+    } else if (!keys['KeyZ']) {
+      chargeHeld = 0;
+    }
+  } else if (keys['KeyZ']&&player.shootCooldown<=0 && !timeFreeze) {
     playerShoot(); player.shootCooldown=Math.max(2,6-Math.floor(power));
   }
   if (keys['KeyX']&&bombs>0&&bombActive<=0) {
@@ -1304,10 +1360,42 @@ function drawPlayer() {
   }
 }
 
+function drawChargeIndicator() {
+  if (power < 5.0 || chargeHeld < 1) return;
+  const pct = Math.min(chargeHeld / 60, 1);
+  const barW = 60;
+  const bx = player.x - barW/2;
+  const by = player.y + 20;
+  // background
+  ctx.fillStyle='rgba(0,0,0,0.6)';
+  ctx.fillRect(bx-1,by-1,barW+2,9);
+  // fill
+  const col = pct >= 1 ? '#ff0000' : `hsl(${pct*30},100%,55%)`;
+  ctx.fillStyle=col;
+  ctx.fillRect(bx,by,barW*pct,7);
+  // glow when ready
+  if (pct >= 1) {
+    ctx.shadowColor='#ff0000'; ctx.shadowBlur=10;
+    ctx.strokeStyle='#ff4444'; ctx.lineWidth=1;
+    ctx.strokeRect(bx,by,barW,7);
+    ctx.shadowBlur=0;
+    ctx.fillStyle=`rgba(255,50,50,${0.5+Math.sin(frame*0.3)*0.5})`;
+    ctx.font='bold 9px sans-serif'; ctx.textAlign='center';
+    ctx.fillText('RELEASE!', player.x, by-3);
+  }
+}
+
 function drawBullets() {
   bullets.forEach(b => {
     ctx.save();
-    if (b.homing) {
+    if (b.type==='charge5') {
+      const cp = Math.sin(frame*0.3)*0.3+0.7;
+      ctx.shadowColor='#ff0000'; ctx.shadowBlur=16*cp;
+      ctx.fillStyle='#ff2222';
+      ctx.beginPath(); ctx.arc(b.x,b.y,b.r||12,0,Math.PI*2); ctx.fill();
+      ctx.fillStyle='#ffaaaa';
+      ctx.beginPath(); ctx.arc(b.x,b.y,4,0,Math.PI*2); ctx.fill();
+    } else if (b.homing) {
       ctx.shadowColor = '#ff44ff'; ctx.shadowBlur = 8;
       ctx.fillStyle = '#ffaaff';
       ctx.beginPath(); ctx.arc(b.x, b.y, 4, 0, Math.PI*2); ctx.fill();
@@ -1371,7 +1459,21 @@ function drawBoss() {
 function drawItems() {
   items.forEach(it=>{
     ctx.save();
-    if (it.type==='life') {
+    if (it.type==='bluediamond') {
+      ctx.save();
+      const pulse2 = 0.7 + Math.sin(frame*0.2)*0.3;
+      ctx.shadowColor='#4488ff'; ctx.shadowBlur=14*pulse2;
+      ctx.translate(it.x,it.y);
+      ctx.fillStyle=`rgba(80,160,255,${pulse2})`;
+      ctx.beginPath();
+      ctx.moveTo(0,-10); ctx.lineTo(8,0); ctx.lineTo(0,10); ctx.lineTo(-8,0);
+      ctx.closePath(); ctx.fill();
+      ctx.fillStyle='#aaddff'; ctx.beginPath();
+      ctx.moveTo(0,-10); ctx.lineTo(8,0); ctx.lineTo(0,-2); ctx.closePath(); ctx.fill();
+      ctx.fillStyle='#88bbff'; ctx.font='bold 7px sans-serif';
+      ctx.textAlign='center'; ctx.fillText('LV5',0,16);
+      ctx.restore();
+    } else if (it.type==='life') {
       // Golden star with pulsing glow
       const pulse = 0.7 + Math.sin(frame * 0.15) * 0.3;
       ctx.shadowColor='#ffdd44'; ctx.shadowBlur=12*pulse;
@@ -1669,6 +1771,7 @@ function loop() {
   updateHomingBullets();
   updateStage();
   if (bossActive) bossBehavior();
+  if (flandreActive) updateFlandre();
   updateLaserCharges();
   updateEnemies();
   updateBullets();
@@ -1681,6 +1784,7 @@ function loop() {
   drawParticles();
   drawEnemyBullets();
   drawEnemies();
+  drawFlandre();
   drawBoss();
   drawLaserCharges();
   drawBullets();
@@ -1702,6 +1806,7 @@ function loop() {
     ctx.fillText('⏸ TIME STOPPED', W/2, H/2);
     ctx.restore();
   }
+  drawFlandreCharge();
   drawBossQuip();
   drawTeleportTaunt();
   drawDefeatScreen();
@@ -2175,6 +2280,18 @@ function launchDebug() {
 
   document.getElementById('debug-menu').style.display = 'none';
 
+  // Special debug stage 99 = Phantom Flandre
+  if (stageN === 99) {
+    document.getElementById('debug-menu').style.display='none';
+    babyMode=true; trueMode=false; hardMode=false; easyMode=false;
+    initGame();
+    debugInfiniteLives = infLives;
+    power = powerN;
+    lives = livesN;
+    spawnFlandre();
+    state='playing';
+    return;
+  }
   // Use the real start functions so all mode rules apply correctly
   if (mode === 'true')        startTrueMode();
   else if (mode === 'hard')   startGame();
@@ -2197,6 +2314,256 @@ function launchDebug() {
 // Infinite lives patch (applied at playerHit call site via wrapper)
 const _origPlayerHit = playerHit;
 // Override defined after playerHit exists – see boot section
+
+
+// ═══════════════════════════════════════════════════════════════
+//  PHANTOM FLANDRE SCARLET  (debug-only boss)
+// ═══════════════════════════════════════════════════════════════
+
+function spawnFlandre() {
+  flandreActive = true;
+  flandreHp     = 8000;
+  flandreMaxHp  = 8000;
+  flandrePhase  = 0;
+  flandreTimer  = 0;
+  flandre = {
+    key:'boss_flandre', w:192, h:112,
+    x: W/2 - 96,
+    y: -120,          // starts offscreen above
+    hp: flandreHp,
+    targetX: W/2-96, targetY: -120,
+    shootTimer: 0, moveTimer: 0,
+    spiralAngle: 0,
+    gemAngle: 0,
+    gemOffset: 0,
+    waveSpawned: false,
+  };
+  // Spawn a random wave first
+  const waveIdx = Math.floor(Math.random() * 10);
+  spawnWave(waveIdx);
+  showStageBanner('👻 PHANTOM FLANDRE SCARLET');
+  bgPaused = true;
+}
+
+function updateFlandre() {
+  if (!flandreActive || !flandre) return;
+  flandreTimer++;
+  if (flandreTintRed > 0) flandreTintRed--;
+
+  // ── Phase 0: completely inactive offscreen ───────────────────
+  if (flandrePhase === 0) {
+    // Hard-park offscreen — no shooting, no animation updates
+    flandre.y  = -200;
+    flandre.x  = W/2 - flandre.w/2;
+    // Wait for all queued enemies to be gone
+    if (spawnQueue.length === 0 && enemies.length === 0) {
+      // Check if she needs to spawn more waves (random 1-3 total)
+      if (!flandre.wavesTotal) flandre.wavesTotal = 1 + Math.floor(Math.random() * 3);
+      if (!flandre.wavesSpawned) flandre.wavesSpawned = 1; // already spawned 1 on init
+      if (flandre.wavesSpawned < flandre.wavesTotal) {
+        // Spawn another wave and wait again
+        const waveIdx = Math.floor(Math.random() * 10);
+        spawnWave(waveIdx);
+        flandre.wavesSpawned++;
+      } else {
+        // All waves done — descend into arena
+        flandrePhase = 1;
+        flandreTimer  = 0;
+        flandre.shootTimer = 0;
+      }
+    }
+    return; // do nothing else while offscreen
+  }
+
+  // Only update these when active (phases 1+)
+  flandre.shootTimer++;
+  flandre.gemAngle += 0.03;
+
+  // ── Phase 1: enter frame from top ────────────────────────────
+  if (flandrePhase === 1) {
+    const targetY = -10;
+    flandre.y += (targetY - flandre.y) * 0.04;
+    flandre.x += ((W/2-flandre.w/2) - flandre.x) * 0.04;
+    if (flandre.y >= targetY - 2) { flandrePhase = 2; flandreTimer = 0; }
+  }
+
+  // ── Phase 2: main fight ───────────────────────────────────────
+  else if (flandrePhase === 2 || flandrePhase === 3) {
+    // Float horizontally
+    if (flandre.moveTimer++ % 150 === 0) {
+      flandre.targetX = 20 + Math.random()*(W - flandre.w - 40);
+    }
+    flandre.x += (flandre.targetX - flandre.x) * 0.015;
+    flandre.y += ((-8) - flandre.y) * 0.02; // hover just off top
+
+    const be = { x:flandre.x+flandre.w/2, y:flandre.y+flandre.h/2,
+                 spiralAngle:flandre.spiralAngle, ringOffset:flandre.gemOffset };
+
+    // Rainbow gem shots (wide spread, multicolour)
+    if (flandre.shootTimer % 18 === 0) {
+      const gemColors = ['#ff3333','#ff8800','#ffee00','#33cc33','#3388ff','#aa33ff','#ff33bb'];
+      const count = flandrePhase===3 ? 12 : 7;
+      for (let i=0;i<count;i++) {
+        const a = (Math.PI*2/count)*i + flandre.gemAngle;
+        const spd = flandrePhase===3 ? 3.0 : 2.2;
+        enemyBullets.push({ x:be.x, y:be.y,
+          dx:Math.cos(a)*spd, dy:Math.sin(a)*spd,
+          r:6, color:gemColors[i%gemColors.length] });
+      }
+      flandre.gemOffset += 0.25;
+    }
+
+    // Homing gem burst at player
+    if (flandre.shootTimer % 55 === 0) {
+      for (let i=0;i<(flandrePhase===3?5:3);i++) {
+        const a = Math.atan2(player.y-be.y, player.x-be.x) + (i-1)*0.2;
+        enemyBullets.push({ x:be.x, y:be.y,
+          dx:Math.cos(a)*3.5, dy:Math.sin(a)*3.5,
+          r:5, color:'#ff88ff', homing:true, homingLife:60 });
+      }
+    }
+
+    // Phase 2 only: spiral pink balls (immune to normal shots visual hint)
+    if (flandre.shootTimer % 30 === 0 && flandrePhase===2) {
+      for (let i=0;i<3;i++) {
+        const a = flandre.spiralAngle + (Math.PI*2/3)*i;
+        enemyBullets.push({ x:be.x, y:be.y,
+          dx:Math.cos(a)*2.5, dy:Math.sin(a)*2.5, r:7, color:'#ff88cc' });
+      }
+      flandre.spiralAngle += 0.18;
+    }
+
+    // Phase 3 (rage, below 30% HP): also drops blue diamonds more frequently
+    // and fires faster lasers from the gems
+    if (flandrePhase===3 && flandre.shootTimer%80===0) {
+      // Drop a blue diamond at a random position
+      items.push({ x:be.x + (Math.random()-0.5)*100,
+                   y:flandre.y+flandre.h+10, vy:1.5, type:'bluediamond' });
+    }
+
+    // Transition to rage phase
+    if (flandrePhase===2 && flandre.hp < flandreMaxHp*0.3) {
+      flandrePhase = 3;
+      showStageBanner('👻 RAGE MODE');
+    }
+
+    // Periodic retreat: every ~600 frames (10 sec) retreat, spawn 1-2 waves, return
+    const retreatInterval = flandrePhase===3 ? 480 : 600;
+    if (flandre.shootTimer > 0 && flandre.shootTimer % retreatInterval === 0) {
+      // Reset wave counter so she spawns 1-2 fresh waves before returning
+      flandre.wavesTotal   = 1 + Math.floor(Math.random() * 2);
+      flandre.wavesSpawned = 0;
+      flandrePhase = 0;
+      flandreTimer = 0;
+      const waveIdx2 = Math.floor(Math.random() * 10);
+      spawnWave(waveIdx2);
+      flandre.wavesSpawned = 1;
+    }
+
+    // Periodically drop blue diamond (phase 2)
+    if (flandrePhase===2 && flandre.shootTimer % 220 === 0) {
+      items.push({ x:be.x+(Math.random()-0.5)*80, y:flandre.y+flandre.h, vy:1.2, type:'bluediamond' });
+    }
+
+    // Check defeat
+    if (flandre.hp <= 0) {
+      for(let i=0;i<80;i++) spawnParticle(flandre.x+flandre.w/2, flandre.y+flandre.h/2,'#ff2244',10);
+      for(let i=0;i<40;i++) spawnParticle(flandre.x+flandre.w/2, flandre.y+flandre.h/2,'#ffdd44',8);
+      score += 99999;
+      flandreActive = false; flandre = null;
+      bgPaused = false;
+      enemyBullets = [];
+      showStageBanner('PHANTOM DEFEATED  +99999');
+      // Show defeat quip
+      defeatQuipText = "Kya ha ha! You actually did it... don't tell Onee-sama.";
+      defeatBossKey = 'boss_flandre'; defeatBossW=192; defeatBossH=112;
+      defeatScreen=true; defeatPhase=0; defeatScale=1; defeatAlpha=0;
+    }
+  }
+
+  // Sync HP
+  flandreHp = flandre ? flandre.hp : 0;
+}
+
+function drawFlandre() {
+  if (!flandreActive || !flandre) return;
+  const t = frame * 0.04;
+
+  // Red tint aura on hit
+  if (flandreTintRed > 0) {
+    ctx.save();
+    ctx.globalAlpha = (flandreTintRed/90)*0.5;
+    ctx.fillStyle='#ff0000';
+    ctx.fillRect(0,0,W,H);
+    ctx.restore();
+  }
+
+  // Phantom glow underneath
+  ctx.save();
+  ctx.globalAlpha = 0.15 + Math.sin(t)*0.05;
+  ctx.fillStyle='#ff2244';
+  ctx.beginPath();
+  ctx.ellipse(flandre.x+flandre.w/2, flandre.y+flandre.h*0.7, flandre.w*0.5, 30, 0, 0, Math.PI*2);
+  ctx.fill();
+  ctx.restore();
+
+  // Sprite
+  ctx.save();
+  ctx.imageSmoothingEnabled = true;
+  // Hover bob
+  const bobY = Math.sin(t*1.2)*4;
+  drawSprite('boss_flandre', flandre.x, flandre.y + bobY, flandre.w, flandre.h);
+  ctx.imageSmoothingEnabled = false;
+  ctx.restore();
+
+  // Orbiting rainbow gems
+  const gemColors = ['#ff3333','#ff8800','#ffee00','#33cc33','#3388ff','#aa33ff','#ff33bb'];
+  for (let i=0;i<7;i++) {
+    const a = flandre.gemAngle*2 + (Math.PI*2/7)*i;
+    const rx = flandre.x+flandre.w/2 + Math.cos(a)*55;
+    const ry = flandre.y+flandre.h*0.7 + bobY + Math.sin(a)*18;
+    ctx.save();
+    ctx.shadowColor = gemColors[i]; ctx.shadowBlur = 10;
+    ctx.fillStyle = gemColors[i];
+    ctx.translate(rx,ry);
+    ctx.rotate(a+t);
+    ctx.beginPath();
+    ctx.moveTo(0,-7); ctx.lineTo(5,0); ctx.lineTo(0,7); ctx.lineTo(-5,0);
+    ctx.closePath(); ctx.fill();
+    ctx.restore();
+  }
+
+  // HP bar (wide, red)
+  const hpPct = Math.max(0, flandre.hp/flandreMaxHp);
+  ctx.fillStyle='#220000'; ctx.fillRect(10, 4, W-20, 6);
+  const barColor = hpPct > 0.3 ? '#ff2244' : '#ff8800';
+  ctx.fillStyle=barColor; ctx.fillRect(10, 4, (W-20)*hpPct, 6);
+  ctx.strokeStyle='#660033'; ctx.lineWidth=0.5;
+  ctx.strokeRect(10,4,W-20,6);
+  ctx.fillStyle='#ffaacc'; ctx.font='8px sans-serif'; ctx.textAlign='left';
+  ctx.fillText('PHANTOM FLANDRE  ∞', 12, 18);
+
+  // 50% immunity warning
+  if (flandre.hp < flandreMaxHp*0.5) {
+    ctx.fillStyle='rgba(180,0,0,0.5)';
+    ctx.font='bold 9px sans-serif'; ctx.textAlign='center';
+    ctx.fillText('⚠ IMMUNE TO NORMAL SHOTS — USE LV5 ⚠', W/2, 28);
+  }
+}
+
+function drawFlandreCharge() {
+  drawChargeIndicator();
+  // Ghost visual on player when lv5 active
+  if (power >= 5.0) {
+    ctx.save();
+    ctx.globalAlpha = 0.25 + Math.sin(frame*0.15)*0.15;
+    ctx.fillStyle='#ff2222';
+    ctx.beginPath();
+    ctx.arc(player.x, player.y, 22, 0, Math.PI*2);
+    ctx.fill();
+    ctx.restore();
+  }
+}
 
 </script>
 </body>
