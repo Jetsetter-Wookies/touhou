@@ -1,4 +1,7 @@
 <!DOCTYPE html>
+<!-- ╔══════════════════════════════════════════════════════════╗
+     ║  TRUE MODE: Beat Hard Mode to unlock Stage 7.           ║
+     ╚══════════════════════════════════════════════════════════╝ -->
 <html lang="en">
 <head>
 <meta charset="UTF-8">
@@ -2166,7 +2169,10 @@ function musicOnVictory() {
   MusicPlayer.fadeOut(1500);
 }
 
-
+// ╔══════════════════════════════════════════════════════════════╗
+// ║  PHANTOM FLANDRE: PASSWORD = D3ATHT0A11G0D5                  ║
+// ╚══════════════════════════════════════════════════════════════╝
+  
 // ═══════════════════════════════════════════════════════════════
 //  MUSIC ROOM
 // ═══════════════════════════════════════════════════════════════
@@ -2186,7 +2192,7 @@ const MUSIC_TRACKS = [
   { id:'s6_boss', label:'Stage 6 Boss - Izayoi Sakuya', src:'assets/music/level 6/boss.mp3', locked:false },
   { id:'s7_stage',label:'??? - ???',             src:'assets/music/level 7/stage.mp3', locked:true },
   { id:'s7_boss', label:'??? - ???',             src:'assets/music/level 7/boss.mp3',  locked:true },
-  { id:'flandre',  label:'👻 ??? - Phantom Theme',  src:'assets/music/level 8/boss.mp3',  locked:'flandre' },
+  { id:'flandre',  label:'??? - ???',  src:'assets/music/level 8/boss.mp3',  locked:'flandre' },
 ];
 
 let mrCurrentAudio = null;
@@ -2437,7 +2443,7 @@ function showStagePassword(nextStage) {
 //  DEBUG MENU
 // ═══════════════════════════════════════════════════════════════
 let debugInfiniteLives = false;
-
+  
 function openDebugMenu() {
   document.getElementById('title-screen').style.display = 'none';
   document.getElementById('debug-menu').style.display = 'flex';
@@ -2451,7 +2457,7 @@ function submitDebugPassword() {
 
   if (code === 'D3ATHT0A11G0D5') {
     fb.style.color = '#ff2244';
-    fb.textContent = '👻 PHANTOM DETECTED...';
+    fb.textContent = 'PHANTOM DETECTED...';
     input.value = '';
     setTimeout(() => {
       fb.textContent = '';
@@ -2522,9 +2528,12 @@ const _origPlayerHit = playerHit;
 // Override defined after playerHit exists – see boot section
 
 
-// ═══════════════════════════════════════════════════════════════
-//  PHANTOM FLANDRE SCARLET  (debug-only boss)
-// ═══════════════════════════════════════════════════════════════
+// ╔══════════════════════════════════════════════════════════════╗
+// ║  DEBUG MENU: Enter  D3BUGM0D3  on the title screen.          ║
+// ║  Lets you choose any mode, stage, lives, and power level .   ║
+// ║  The SPECIAL CODE field inside here is the only place        ║
+// ║  the Phantom Flandre code will work.                         ║
+// ╚══════════════════════════════════════════════════════════════╝
 
 function spawnFlandre() {
   flandreActive = true;
@@ -2545,7 +2554,7 @@ function spawnFlandre() {
     wavesTotal: 0,
     wavesSpawned: 0,
   };
-  showStageBanner('👻 PHANTOM FLANDRE SCARLET');
+  showStageBanner('PHANTOM FLANDRE SCARLET');
   bgPaused = true;
   MusicPlayer.fadeOut(800);
   setTimeout(startFlandreMusic, 900);
@@ -2659,7 +2668,7 @@ function updateFlandre() {
     // Transition to rage phase
     if (flandrePhase===2 && flandre.hp < flandreMaxHp*0.3) {
       flandrePhase = 3;
-      showStageBanner('👻 RAGE MODE');
+      showStageBanner('RAGE MODE');
     }
 
     // Periodic retreat: every ~600 frames (10 sec) retreat, spawn 1-2 waves, return
