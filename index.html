@@ -2331,27 +2331,25 @@ function spawnFlandre() {
   flandreActive = true;
   flandreHp     = 8000;
   flandreMaxHp  = 8000;
-  flandrePhase  = 0;
+  flandrePhase  = 1;   // enter screen immediately, waves come after first retreat
   flandreTimer  = 0;
   flandre = {
     key:'boss_flandre', w:192, h:112,
     x: W/2 - 96,
-    y: -120,          // starts offscreen above
+    y: -200,           // starts far above
     hp: flandreHp,
     targetX: W/2-96, targetY: -120,
     shootTimer: 0, moveTimer: 0,
     spiralAngle: 0,
     gemAngle: 0,
     gemOffset: 0,
-    waveSpawned: false,
+    wavesTotal: 0,
+    wavesSpawned: 0,
   };
-  // Spawn a random wave first
-  const waveIdx = Math.floor(Math.random() * 10);
-  spawnWave(waveIdx);
   showStageBanner('👻 PHANTOM FLANDRE SCARLET');
   bgPaused = true;
-  MusicPlayer.fadeOut(800);  // fade out whatever is playing
-  setTimeout(startFlandreMusic, 900);  // then start Flandre theme
+  MusicPlayer.fadeOut(800);
+  setTimeout(startFlandreMusic, 900);
 }
 
 function updateFlandre() {
@@ -2359,29 +2357,38 @@ function updateFlandre() {
   flandreTimer++;
   if (flandreTintRed > 0) flandreTintRed--;
 
-  // ── Phase 0: completely inactive offscreen ───────────────────
+  // Always process the spawn queue so wave enemies actually appear
+  processSpawnQueue();
+
+  // ── Phase 0: offscreen – summon waves, wait for clear, then return ──
   if (flandrePhase === 0) {
-    // Hard-park offscreen — no shooting, no animation updates
-    flandre.y  = -200;
-    flandre.x  = W/2 - flandre.w/2;
-    // Wait for all queued enemies to be gone
-    if (spawnQueue.length === 0 && enemies.length === 0) {
-      // Check if she needs to spawn more waves (random 1-3 total)
-      if (!flandre.wavesTotal) flandre.wavesTotal = 1 + Math.floor(Math.random() * 3);
-      if (!flandre.wavesSpawned) flandre.wavesSpawned = 1; // already spawned 1 on init
-      if (flandre.wavesSpawned < flandre.wavesTotal) {
-        // Spawn another wave and wait again
-        const waveIdx = Math.floor(Math.random() * 10);
-        spawnWave(waveIdx);
-        flandre.wavesSpawned++;
-      } else {
-        // All waves done — descend into arena
-        flandrePhase = 1;
-        flandreTimer  = 0;
-        flandre.shootTimer = 0;
+    // Slide offscreen to top
+    flandre.y += (-200 - flandre.y) * 0.12;
+    flandre.x += (W/2 - flandre.w/2 - flandre.x) * 0.08;
+
+    // Once parked offscreen, manage wave spawning
+    if (flandre.y < -160) {
+      // Initialise wave quota if not set
+      if (!flandre.wavesTotal || flandre.wavesTotal === 0) {
+        flandre.wavesTotal   = 1 + Math.floor(Math.random() * 3);
+        flandre.wavesSpawned = 0;
+      }
+      // Spawn next wave if queue and enemies are clear
+      if (spawnQueue.length === 0 && enemies.length === 0) {
+        if (flandre.wavesSpawned < flandre.wavesTotal) {
+          spawnWave(Math.floor(Math.random() * 10));
+          flandre.wavesSpawned++;
+        } else {
+          // All waves cleared – return to fight
+          flandre.wavesTotal   = 0;
+          flandre.wavesSpawned = 0;
+          flandrePhase = 1;
+          flandreTimer = 0;
+          flandre.shootTimer = 0;
+        }
       }
     }
-    return; // do nothing else while offscreen
+    return;
   }
 
   // Only update these when active (phases 1+)
