@@ -851,10 +851,6 @@ function bossBehavior() {
     if (boss.shootTimer%(22*ti)===0) { patterns.spiral(be); boss.spiralAngle=be.spiralAngle; }
     if (boss.shootTimer%(40*ti)===0) patterns.aimed(be);
     if (boss.shootTimer%(90*ti)===0) patterns.spread(be);
-    // TIME FREEZE trigger
-    if (boss.shootTimer%(350*ti)===0 && !timeFreeze) {
-      timeFreeze=true; timeFreezeTimer=210;
-    }
     // LASER SWEEP – only past 50% HP, random interval, sweeps full screen L→R
     if (boss.hp < bossMaxHp * 0.5) {
       // Pick a random interval each time: 180-320 frames
@@ -1221,7 +1217,7 @@ function handleInput() {
     for(let i=0;i<40;i++) spawnParticle(player.x,player.y,'#44aaff',8);
     updateUI();
   }
-  if (keys['Escape']) { paused=!paused; keys['Escape']=false; }
+
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -1640,10 +1636,20 @@ function loop() {
     return;
   }
   if (state!=='playing') return;
+
+  // ── Pause toggle – checked every frame regardless of paused state ──
+  if (keys['Escape']) { paused=!paused; keys['Escape']=false; }
+  if (paused && (keys['KeyZ'] || keys['KeyX'])) { paused=false; keys['KeyZ']=false; keys['KeyX']=false; }
+
   if (paused) {
-    ctx.fillStyle='rgba(0,0,0,0.5)'; ctx.fillRect(0,0,W,H);
-    ctx.fillStyle='#e0c0ff'; ctx.font='20px "Noto Serif JP"'; ctx.textAlign='center';
-    ctx.fillText('PAUSED',W/2,H/2);
+    // Freeze: just redraw the overlay on top of the last rendered frame
+    ctx.fillStyle='rgba(0,0,20,0.55)'; ctx.fillRect(0,0,W,H);
+    ctx.fillStyle='#e0c0ff'; ctx.font='bold 22px "Noto Serif JP"';
+    ctx.textAlign='center';
+    ctx.fillText('PAUSED', W/2, H/2 - 10);
+    ctx.font='11px "Noto Serif JP"';
+    ctx.fillStyle='rgba(180,140,255,0.7)';
+    ctx.fillText('ESC / Z to resume', W/2, H/2 + 14);
     return;
   }
   frame++;
