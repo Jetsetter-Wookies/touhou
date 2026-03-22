@@ -353,6 +353,7 @@ let bossQuipTimer = 0;
 
 // Flandre debug boss
 let flandreActive    = false;
+let flandreDefeated  = false;  // shows special end instead of normal advance
 let flandreHp        = 0;
 let flandreMaxHp     = 8000;
 let flandre          = null;     // boss object
@@ -396,7 +397,7 @@ function initGame() {
   invincible=0; bombActive=0; stageTimer=0; scrollY=0;
   bgScrollY=0; bgPaused=false; defeatScreen=false; bossTeleporting=false;
   timeFreeze=false; timeFreezeTimer=0; timeFreezeAlpha=0;
-  flandreActive=false; flandre=null; flandrePhase=0; flandreTimer=0; flandreTintRed=0; chargeHeld=0; lv5Unlocked=false; laserCharges=[];
+  flandreActive=false; flandreDefeated=false; flandre=null; flandrePhase=0; flandreTimer=0; flandreTintRed=0; chargeHeld=0; lv5Unlocked=false; laserCharges=[];
   bossActive=false;
   wavePhase=0; waveDelay=90; spawnQueue=[];
   player = { x:W/2, y:H-80, w:32, h:40, speed:4, shootCooldown:0 };
@@ -752,7 +753,7 @@ function drawLaserCharges() {
 }
 
 function bossBehavior() {
-  if (!boss) return;
+  if (!boss || flandreActive) return;
   boss.moveTimer++;
   boss.fightTimer = (boss.fightTimer||0) + 1;
 
@@ -1206,7 +1207,7 @@ let wavePhase = 0;
 let waveDelay = 90;   // frames before wave 0
 
 function updateStage() {
-  if (bossActive) return;
+  if (bossActive || flandreActive) return;  // Flandre manages her own wave flow
   processSpawnQueue();
   const allClear = spawnQueue.length === 0 && enemies.length === 0;
 
@@ -1621,7 +1622,12 @@ function updateDefeatScreen() {
   if (defeatPhase >= 1 && keys['KeyZ']) {
     keys['KeyZ'] = false;
     defeatScreen = false;
-    advanceAfterBoss();
+    if (flandreDefeated) {
+      flandreDefeated = false;
+      showTitle();  // go back to title after Flandre
+    } else {
+      advanceAfterBoss();
+    }
   }
 }
 
@@ -1709,7 +1715,7 @@ let lastUIFrame=0;
 function updateUI() {
   document.getElementById('scoreDisplay').textContent=score.toLocaleString();
   document.getElementById('hiScoreDisplay').textContent=hiScore.toLocaleString();
-  document.getElementById('stageDisplay').textContent=(trueMode?"✦":easyMode?"☆":babyMode?"✿":"")+stage;
+  document.getElementById('stageDisplay').textContent = flandreActive ? 'ERR' : (trueMode?'✦':easyMode?'☆':babyMode?'✿':'')+stage;
   document.getElementById('powerDisplay').textContent=power.toFixed(1);
   document.getElementById('grazeDisplay').textContent=graze;
   // lives – show actual count (no fixed max)
@@ -2474,7 +2480,7 @@ function updateFlandre() {
       for(let i=0;i<40;i++) spawnParticle(flandre.x+flandre.w/2, flandre.y+flandre.h/2,'#ffdd44',8);
       score += 99999;
       stopFlandreMusic();
-      flandreActive = false; flandre = null;
+      flandreActive = false; flandreDefeated = true; flandre = null;
       bgPaused = false;
       enemyBullets = [];
       showStageBanner('PHANTOM DEFEATED  +99999');
