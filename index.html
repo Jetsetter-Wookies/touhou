@@ -119,21 +119,17 @@
     display:flex; justify-content:space-between; align-items:flex-end;
     width:100%; pointer-events:none;
   }
-  /* D-pad */
-  #dpad {
-    display:grid; grid-template-columns:44px 44px 44px;
-    grid-template-rows:44px 44px 44px; gap:3px;
+  /* Joystick zone – left half of screen */
+  #joystick-zone {
+    position:fixed; left:0; bottom:0;
+    width:50%; height:220px;
+    z-index:100; touch-action:none;
     pointer-events:all;
   }
-  .dp-btn {
-    background:#ffffff18; border:1px solid #553377;
-    border-radius:6px; display:flex; align-items:center;
-    justify-content:center; color:#cc44ff; font-size:18px;
-    -webkit-user-select:none; user-select:none;
-    touch-action:manipulation; cursor:pointer;
+  #joystick-canvas {
+    width:100%; height:100%;
+    display:block;
   }
-  .dp-btn:active, .dp-btn.pressed { background:#cc44ff44; }
-  .dp-center { background:#ffffff08; border-color:#220033; color:#220033; pointer-events:none; }
 
   /* Action buttons */
   #action-btns {
@@ -144,19 +140,20 @@
   #action-row-bot { display:flex; gap:6px; align-items:center; }
 
   .act-btn {
-    width:56px; height:56px; border-radius:50%;
+    /* sizes set by JS based on DPI */
+    border-radius:50%;
     display:flex; align-items:center; justify-content:center;
-    font-size:11px; font-weight:700; letter-spacing:0.5px;
+    font-weight:700; letter-spacing:0.5px;
     -webkit-user-select:none; user-select:none;
-    touch-action:manipulation; cursor:pointer;
-    border:2px solid;
+    touch-action:none; cursor:pointer;
+    border:2px solid; flex-shrink:0;
   }
-  .act-btn:active, .act-btn.pressed { filter:brightness(1.4); }
+  .act-btn.pressed { filter:brightness(1.6); }
 
-  #btn-fire  { background:#ff224444; border-color:#ff2244; color:#ff8899; }
+  #btn-fire  { background:#ff224455; border-color:#ff2244; color:#ff8899; }
   #btn-bomb  { background:#44aaff33; border-color:#44aaff; color:#88ccff; }
-  #btn-slow  { background:#ffdd4433; border-color:#ffdd44; color:#ffee88; width:46px; height:46px; font-size:10px; }
-  #btn-pause { background:#33333344; border-color:#666; color:#aaa; width:36px; height:36px; font-size:10px; border-radius:6px; }
+  #btn-slow  { background:#ffdd4433; border-color:#ffdd44; color:#ffee88; }
+  #btn-pause { background:#33333344; border-color:#666; color:#aaa; border-radius:6px; }
 
   /* mobile-controls shown via JS based on touch capability */
 
@@ -174,21 +171,14 @@
 <!-- Fullscreen button -->
 <button id="fullscreen-btn" onclick="toggleFullscreen()" title="Fullscreen">⛶</button>
 
+<!-- Joystick zone – separate from mobile-controls, covers left half -->
+<div id="joystick-zone"><canvas id="joystick-canvas"></canvas></div>
+
 <!-- Mobile controls -->
 <div id="mobile-controls">
   <div id="mobile-controls-inner">
-    <!-- Left: D-pad -->
-    <div id="dpad">
-      <div></div>
-      <div class="dp-btn" id="dp-up"   data-key="ArrowUp">▲</div>
-      <div></div>
-      <div class="dp-btn" id="dp-left" data-key="ArrowLeft">◀</div>
-      <div class="dp-center dp-btn"></div>
-      <div class="dp-btn" id="dp-right" data-key="ArrowRight">▶</div>
-      <div></div>
-      <div class="dp-btn" id="dp-down" data-key="ArrowDown">▼</div>
-      <div></div>
-    </div>
+    <!-- Left: Virtual joystick zone (touch anywhere on left half) -->
+    <div style="width:0;height:0;"></div><!-- spacer so action-btns stays right -->
     <!-- Right: action buttons -->
     <div id="action-btns">
       <div id="action-row-top">
@@ -2917,39 +2907,223 @@ checkOrientation();
 //  MOBILE VIRTUAL CONTROLS – inject touch events into keys map
 // ═══════════════════════════════════════════════════════════════
 function setupMobileControls() {
-  // Show controls on any touch-capable device regardless of screen size
-  if (isTouchDevice()) {
-    const mc = document.getElementById('mobile-controls');
-    if (mc) mc.style.display = 'block';
+  if (!isTouchDevice()) return;
+
+  const mc = document.getElementById('mobile-controls');
+  if (mc) mc.style.display = 'block';
+  const jz = document.getElementById('joystick-zone');
+  if (jz) jz.style.display = 'block';
+
+  // ── DPI-aware button sizing ──────────────────────────────────
+  // Use devicePixelRatio to scale buttons so they feel the same physical size
+  const dpr = window.devicePixelRatio || 1;
+  // Target physical size: FIRE=14mm, BOMB/FOCUS=12mm, PAUSE=9mm
+  // 1mm ≈ 3.78px at 96dpi; real screens vary — use dpr as a proxy
+  const physBase = Math.round(56 * Math.max(1, Math.min(dpr, 2.5)));
+  const physSm   = Math.round(46 * Math.max(1, Math.min(dpr, 2.5)));
+  const physTiny = Math.round(36 * Math.max(1, Math.min(dpr, 2.5)));
+  const fsize    = Math.round(11 * Math.max(1, Math.min(dpr, 2)));
+
+  document.getElementById('btn-fire') .style.cssText += `;width:${physBase}px;height:${physBase}px;font-size:${fsize}px`;
+  document.getElementById('btn-bomb') .style.cssText += `;width:${physBase}px;height:${physBase}px;font-size:${fsize}px`;
+  document.getElementById('btn-slow') .style.cssText += `;width:${physSm}px;height:${physSm}px;font-size:${Math.round(fsize*0.9)}px`;
+  document.getElementById('btn-pause').style.cssText += `;width:${physTiny}px;height:${physTiny}px;font-size:${Math.round(fsize*0.85)}px`;
+
+  // ── Multi-touch action buttons ───────────────────────────────
+  // Track which pointer ID maps to which key so simultaneous touches work
+  const pointerKeyMap = {};
+
+  function actPress(e, k) {
+    e.preventDefault();
+    keys[k] = true;
+    e.currentTarget.classList.add('pressed');
+    pointerKeyMap[e.pointerId] = k;
+    if (state !== 'playing' && (k === 'KeyZ' || k === 'KeyX')) handleMenuInput(k);
   }
-  const btns = document.querySelectorAll('.dp-btn[data-key], .act-btn[data-key]');
-  btns.forEach(btn => {
+  function actRelease(e) {
+    e.preventDefault();
+    const k = pointerKeyMap[e.pointerId];
+    if (k) { keys[k] = false; delete pointerKeyMap[e.pointerId]; }
+    e.currentTarget.classList.remove('pressed');
+  }
+
+  document.querySelectorAll('.act-btn[data-key]').forEach(btn => {
     const k = btn.dataset.key;
-    if (!k) return;
-
-    function press(e) {
-      e.preventDefault();
-      keys[k] = true;
-      btn.classList.add('pressed');
-      // Special: menu navigation via Z = confirm, X = back
-      if (state !== 'playing' && (k === 'KeyZ' || k === 'KeyX')) {
-        handleMenuInput(k);
-      }
-    }
-    function release(e) {
-      e.preventDefault();
-      keys[k] = false;
-      btn.classList.remove('pressed');
-    }
-
-    btn.addEventListener('touchstart', press, { passive:false });
-    btn.addEventListener('touchend',   release, { passive:false });
-    btn.addEventListener('touchcancel',release, { passive:false });
-    // Mouse fallback for desktop testing
-    btn.addEventListener('mousedown', press);
-    btn.addEventListener('mouseup',   release);
-    btn.addEventListener('mouseleave',release);
+    btn.addEventListener('pointerdown',  e => actPress(e, k),   { passive:false });
+    btn.addEventListener('pointerup',    actRelease,              { passive:false });
+    btn.addEventListener('pointercancel',actRelease,              { passive:false });
+    btn.addEventListener('pointerleave', actRelease,              { passive:false });
+    btn.setPointerCapture && btn.addEventListener('pointerdown', e => btn.setPointerCapture(e.pointerId));
   });
+
+  // ── Virtual joystick ─────────────────────────────────────────
+  setupJoystick();
+}
+
+// ── VIRTUAL JOYSTICK ─────────────────────────────────────────────
+// Touch anywhere on the left half of the screen to place the joystick
+// and drag to set direction. Release clears all movement keys.
+
+const JOYSTICK_DEAD = 0.15;  // deadzone fraction of radius
+const JOYSTICK_R = 70;       // base radius in CSS px (scaled by DPI)
+
+let joyActive   = false;
+let joyOriginX  = 0;
+let joyOriginY  = 0;
+let joyThumbX   = 0;
+let joyThumbY   = 0;
+let joyPointerId = null;
+
+function setupJoystick() {
+  const zone   = document.getElementById('joystick-zone');
+  const canvas = document.getElementById('joystick-canvas');
+  if (!zone || !canvas) return;
+
+  // Size the canvas to the zone
+  function resizeJoy() {
+    const dpr = window.devicePixelRatio || 1;
+    canvas.width  = zone.clientWidth  * dpr;
+    canvas.height = zone.clientHeight * dpr;
+    canvas.style.width  = zone.clientWidth  + 'px';
+    canvas.style.height = zone.clientHeight + 'px';
+    drawJoystick();
+  }
+  window.addEventListener('resize', resizeJoy);
+  window.addEventListener('orientationchange', ()=>setTimeout(resizeJoy,200));
+  resizeJoy();
+
+  zone.addEventListener('pointerdown', e => {
+    e.preventDefault();
+    if (joyPointerId !== null) return; // only one joystick touch
+    joyPointerId = e.pointerId;
+    joyActive    = true;
+    const r = zone.getBoundingClientRect();
+    joyOriginX = e.clientX - r.left;
+    joyOriginY = e.clientY - r.top;
+    joyThumbX  = joyOriginX;
+    joyThumbY  = joyOriginY;
+    zone.setPointerCapture(e.pointerId);
+    updateJoyKeys();
+    drawJoystick();
+  }, { passive:false });
+
+  zone.addEventListener('pointermove', e => {
+    e.preventDefault();
+    if (e.pointerId !== joyPointerId) return;
+    const r = zone.getBoundingClientRect();
+    joyThumbX = e.clientX - r.left;
+    joyThumbY = e.clientY - r.top;
+    updateJoyKeys();
+    drawJoystick();
+  }, { passive:false });
+
+  function joyEnd(e) {
+    if (e.pointerId !== joyPointerId) return;
+    joyActive    = false;
+    joyPointerId = null;
+    // Clear all movement keys
+    keys['ArrowUp'] = keys['ArrowDown'] = keys['ArrowLeft'] = keys['ArrowRight'] = false;
+    drawJoystick();
+  }
+  zone.addEventListener('pointerup',     joyEnd, { passive:false });
+  zone.addEventListener('pointercancel', joyEnd, { passive:false });
+}
+
+function updateJoyKeys() {
+  if (!joyActive) return;
+  const dpr = window.devicePixelRatio || 1;
+  const radius = JOYSTICK_R * Math.max(1, Math.min(dpr, 2.5));
+  const dx = joyThumbX - joyOriginX;
+  const dy = joyThumbY - joyOriginY;
+  const dist = Math.sqrt(dx*dx + dy*dy);
+  const norm = dist / radius;
+
+  // Deadzone
+  if (norm < JOYSTICK_DEAD) {
+    keys['ArrowUp'] = keys['ArrowDown'] = keys['ArrowLeft'] = keys['ArrowRight'] = false;
+    return;
+  }
+
+  const nx = dx / Math.max(dist, 1);
+  const ny = dy / Math.max(dist, 1);
+  const threshold = 0.4; // how far to tilt before registering axis
+
+  keys['ArrowLeft']  = nx < -threshold;
+  keys['ArrowRight'] = nx >  threshold;
+  keys['ArrowUp']    = ny < -threshold;
+  keys['ArrowDown']  = ny >  threshold;
+
+  // Also handle menu navigation from joystick
+  if (state !== 'playing') {
+    if (ny < -0.6)      handleMenuInput('ArrowUp');
+    else if (ny > 0.6)  handleMenuInput('ArrowDown');
+  }
+}
+
+function drawJoystick() {
+  const canvas = document.getElementById('joystick-canvas');
+  if (!canvas) return;
+  const ctx2 = canvas.getContext('2d');
+  const dpr  = window.devicePixelRatio || 1;
+  const radius = JOYSTICK_R * Math.max(1, Math.min(dpr, 2.5)) * dpr;
+
+  ctx2.clearRect(0, 0, canvas.width, canvas.height);
+  if (!joyActive) {
+    // Hint ring when not active
+    const cx = canvas.width / 2;
+    const cy = canvas.height * 0.55;
+    ctx2.strokeStyle = 'rgba(200,100,255,0.12)';
+    ctx2.lineWidth = 2 * dpr;
+    ctx2.beginPath();
+    ctx2.arc(cx, cy, radius, 0, Math.PI*2);
+    ctx2.stroke();
+    ctx2.fillStyle = 'rgba(200,100,255,0.06)';
+    ctx2.fill();
+    // touch hint icon
+    ctx2.fillStyle = 'rgba(200,100,255,0.18)';
+    ctx2.font = `${Math.round(22*dpr)}px sans-serif`;
+    ctx2.textAlign = 'center';
+    ctx2.fillText('👆', cx, cy + 9*dpr);
+    return;
+  }
+
+  const ox = joyOriginX * dpr;
+  const oy = joyOriginY * dpr;
+  const dx = (joyThumbX - joyOriginX) * dpr;
+  const dy = (joyThumbY - joyOriginY) * dpr;
+  const d  = Math.sqrt(dx*dx+dy*dy);
+  const clampD = Math.min(d, radius);
+  const tx = d > 0 ? ox + dx/d*clampD : ox;
+  const ty = d > 0 ? oy + dy/d*clampD : oy;
+
+  // Outer ring
+  ctx2.strokeStyle = 'rgba(180,80,255,0.35)';
+  ctx2.lineWidth = 3 * dpr;
+  ctx2.fillStyle = 'rgba(80,0,120,0.25)';
+  ctx2.beginPath(); ctx2.arc(ox, oy, radius, 0, Math.PI*2);
+  ctx2.fill(); ctx2.stroke();
+
+  // Inner deadzone ring
+  ctx2.strokeStyle = 'rgba(180,80,255,0.15)';
+  ctx2.lineWidth = 1.5 * dpr;
+  ctx2.beginPath(); ctx2.arc(ox, oy, radius * JOYSTICK_DEAD, 0, Math.PI*2);
+  ctx2.stroke();
+
+  // Guide line
+  ctx2.strokeStyle = 'rgba(200,100,255,0.2)';
+  ctx2.lineWidth = 2 * dpr;
+  ctx2.beginPath(); ctx2.moveTo(ox, oy); ctx2.lineTo(tx, ty); ctx2.stroke();
+
+  // Thumb knob
+  const thumbR = radius * 0.38;
+  const grad = ctx2.createRadialGradient(tx-thumbR*0.3, ty-thumbR*0.3, thumbR*0.1, tx, ty, thumbR);
+  grad.addColorStop(0, 'rgba(255,150,255,0.95)');
+  grad.addColorStop(1, 'rgba(140,0,200,0.85)');
+  ctx2.fillStyle = grad;
+  ctx2.strokeStyle = 'rgba(255,200,255,0.6)';
+  ctx2.lineWidth = 2 * dpr;
+  ctx2.beginPath(); ctx2.arc(tx, ty, thumbR, 0, Math.PI*2);
+  ctx2.fill(); ctx2.stroke();
 }
 
 // ═══════════════════════════════════════════════════════════════
