@@ -390,7 +390,8 @@ let defeatBossW    = 48;
 let defeatBossH    = 56;
 let defeatScale    = 1;
 let defeatAlpha    = 0;
-let defeatPhase    = 0;  // 0=grow, 1=hold, 2=wait for Z
+let defeatPhase    = 0;  // 0=grow, 1=hold 3s, 2=fade out
+let defeatHoldTimer = 0;
 
 // boss teleport dodge (stages 6+)
 let bossTeleporting   = false;
@@ -405,7 +406,7 @@ function initGame() {
   score=0; graze=0; power=1.0;
   lives = babyMode ? 5 : 3; bombs=3; frame=0; stage=1;
   invincible=0; bombActive=0; stageTimer=0; scrollY=0;
-  bgScrollY=0; bgPaused=false; defeatScreen=false; bossTeleporting=false;
+  bgScrollY=0; bgPaused=false; defeatScreen=false; bossTeleporting=false; defeatHoldTimer=0;
   timeFreeze=false; timeFreezeTimer=0; timeFreezeAlpha=0;
   flandreActive=false; flandreDefeated=false; flandre=null; flandrePhase=0; flandreTimer=0; flandreTintRed=0; chargeHeld=0; lv5Unlocked=false; laserCharges=[];
   bossActive=false;
@@ -1622,21 +1623,31 @@ function drawBossQuip() {
 function updateDefeatScreen() {
   if (!defeatScreen) return;
   if (defeatPhase === 0) {
+    // Phase 0: boss sprite scales up + overlay fades in
     defeatAlpha = Math.min(1, defeatAlpha + 0.03);
     defeatScale = Math.min(2.5, defeatScale + 0.04);
-    if (defeatScale >= 2.5) { defeatPhase = 1; }
+    if (defeatScale >= 2.5) {
+      defeatPhase = 1;
+      defeatHoldTimer = 0;  // start hold timer
+    }
   } else if (defeatPhase === 1) {
-    // hold – wait for Z press
-  }
-  // Z press to continue
-  if (defeatPhase >= 1 && keys['KeyZ']) {
-    keys['KeyZ'] = false;
-    defeatScreen = false;
-    if (flandreDefeated) {
-      flandreDefeated = false;
-      showTitle();  // go back to title after Flandre
-    } else {
-      advanceAfterBoss();
+    // Phase 1: hold for 3 seconds (180 frames), then fade out
+    defeatHoldTimer = (defeatHoldTimer || 0) + 1;
+    if (defeatHoldTimer >= 180) {
+      defeatPhase = 2;
+      defeatHoldTimer = 0;
+    }
+  } else if (defeatPhase === 2) {
+    // Phase 2: fade out overlay then advance
+    defeatAlpha = Math.max(0, defeatAlpha - 0.025);
+    if (defeatAlpha <= 0) {
+      defeatScreen = false;
+      if (flandreDefeated) {
+        flandreDefeated = false;
+        showTitle();
+      } else {
+        advanceAfterBoss();
+      }
     }
   }
 }
@@ -1683,10 +1694,7 @@ function drawDefeatScreen() {
     ctx.beginPath(); ctx.moveTo(W/2-8,by-1); ctx.lineTo(W/2,by-10); ctx.lineTo(W/2+8,by-1); ctx.stroke();
     ctx.fillStyle='#e8d0ff'; ctx.font='12px "Noto Serif JP"'; ctx.textAlign='left';
     lines.forEach((ln,i)=> ctx.fillText(ln, bx+pad, by+pad+12+i*lineH));
-    // press Z prompt
-    ctx.fillStyle=`rgba(200,180,255,${0.5+0.5*Math.sin(frame*0.1)})`;
-    ctx.font='11px "Noto Serif JP"'; ctx.textAlign='center';
-    ctx.fillText('Press Z to continue', W/2, by+boxH+16);
+
   }
   ctx.restore();
 }
