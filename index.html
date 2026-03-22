@@ -2983,16 +2983,21 @@ function setupJoystick() {
   if (!zone || !canvas) return;
 
   // Size the canvas to the zone
+  let _joyW = 0, _joyH = 0;
   function resizeJoy() {
     const dpr = window.devicePixelRatio || 1;
-    canvas.width  = zone.clientWidth  * dpr;
-    canvas.height = zone.clientHeight * dpr;
-    canvas.style.width  = zone.clientWidth  + 'px';
-    canvas.style.height = zone.clientHeight + 'px';
+    const w = zone.clientWidth, h = zone.clientHeight;
+    if (w === _joyW && h === _joyH) return; // skip if unchanged
+    _joyW = w; _joyH = h;
+    canvas.width  = w * dpr;
+    canvas.height = h * dpr;
+    canvas.style.width  = w + 'px';
+    canvas.style.height = h + 'px';
     drawJoystick();
   }
-  window.addEventListener('resize', resizeJoy);
-  window.addEventListener('orientationchange', ()=>setTimeout(resizeJoy,200));
+  // Only resize on orientation change, NOT on general window resize
+  // (window resize fires constantly on mobile when URL bar shows/hides)
+  window.addEventListener('orientationchange', ()=>setTimeout(resizeJoy,300));
   resizeJoy();
 
   zone.addEventListener('pointerdown', e => {
@@ -3010,6 +3015,7 @@ function setupJoystick() {
     drawJoystick();
   }, { passive:false });
 
+  let _joyDrawPending = false;
   zone.addEventListener('pointermove', e => {
     e.preventDefault();
     if (e.pointerId !== joyPointerId) return;
@@ -3017,7 +3023,11 @@ function setupJoystick() {
     joyThumbX = e.clientX - r.left;
     joyThumbY = e.clientY - r.top;
     updateJoyKeys();
-    drawJoystick();
+    // Throttle visual redraw to once per animation frame
+    if (!_joyDrawPending) {
+      _joyDrawPending = true;
+      requestAnimationFrame(() => { _joyDrawPending = false; drawJoystick(); });
+    }
   }, { passive:false });
 
   function joyEnd(e) {
@@ -3219,8 +3229,13 @@ function applyMobileScale() {
   wrapper.style.transform = `scale(${scale})`;
   wrapper.style.marginBottom = `${(totalH * scale - totalH)}px`;
 }
-window.addEventListener('resize', applyMobileScale);
-window.addEventListener('orientationchange', ()=>{ setTimeout(applyMobileScale,200); });
+let _scaleTimer = null;
+function debouncedScale() {
+  clearTimeout(_scaleTimer);
+  _scaleTimer = setTimeout(applyMobileScale, 150);
+}
+window.addEventListener('resize', debouncedScale);
+window.addEventListener('orientationchange', ()=>{ setTimeout(applyMobileScale,300); });
 applyMobileScale();
 
 
