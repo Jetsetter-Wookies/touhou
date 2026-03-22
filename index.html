@@ -197,7 +197,6 @@
         <option value="3">Stage 3</option><option value="4">Stage 4</option>
         <option value="5">Stage 5</option><option value="6">Stage 6</option>
         <option value="7">Stage 7</option>
-        <option value="99">👻 Phantom Flandre [DEBUG]</option>
       </select>
       <div style="color:#88ff88;font-size:11px;padding-top:6px;">LIVES:</div>
       <div style="display:flex;gap:6px;align-items:center;">
@@ -218,7 +217,17 @@
         <option value="4.0">4.0 – MAX</option>
       </select>
     </div>
-    <div style="display:flex;gap:8px;margin-top:14px;">
+    <div style="display:flex;align-items:center;gap:6px;margin-top:10px;">
+      <input id="dbg-pw-input" maxlength="20" placeholder="SPECIAL CODE..."
+        style="background:#050d05;border:1px solid #336633;color:#00ff88;font-family:monospace;
+               font-size:11px;letter-spacing:2px;padding:5px 8px;width:160px;text-transform:uppercase;
+               outline:none;text-align:center;"
+        oninput="this.value=this.value.toUpperCase()"
+        onkeydown="if(event.key==='Enter') submitDebugPassword()"/>
+      <button class="screen-btn" onclick="submitDebugPassword()" style="border-color:#336633;color:#00ff88;font-size:10px;padding:5px 8px;">ENTER</button>
+    </div>
+    <div id="dbg-pw-feedback" style="font-size:10px;color:#ff6644;min-height:14px;text-align:center;"></div>
+    <div style="display:flex;gap:8px;margin-top:6px;">
       <button class="screen-btn" onclick="launchDebug()" style="border-color:#00ff88;color:#00ff88;font-size:12px;">▶ LAUNCH</button>
       <button class="screen-btn" onclick="closeDebugMenu()" style="font-size:12px;">✕ CANCEL</button>
     </div>
@@ -2293,6 +2302,37 @@ function openDebugMenu() {
   document.getElementById('title-screen').style.display = 'none';
   document.getElementById('debug-menu').style.display = 'flex';
 }
+
+function submitDebugPassword() {
+  const input = document.getElementById('dbg-pw-input');
+  const code  = (input.value || '').trim().toUpperCase();
+  const fb    = document.getElementById('dbg-pw-feedback');
+  if (!code) { fb.textContent = ''; return; }
+
+  if (code === 'D3ATHT0A11G0D5') {
+    fb.style.color = '#ff2244';
+    fb.textContent = '👻 PHANTOM DETECTED...';
+    input.value = '';
+    setTimeout(() => {
+      fb.textContent = '';
+      document.getElementById('debug-menu').style.display = 'none';
+      // Launch Flandre directly
+      babyMode=true; trueMode=false; hardMode=false; easyMode=false;
+      initGame();
+      debugInfiniteLives = document.getElementById('dbg-infinite').checked;
+      power = parseFloat(document.getElementById('dbg-power').value);
+      lives = parseInt(document.getElementById('dbg-lives').value);
+      spawnFlandre();
+      state = 'playing';
+    }, 800);
+    return;
+  }
+
+  fb.style.color = '#ff6644';
+  fb.textContent = '✗ Unknown code';
+  setTimeout(() => { fb.textContent = ''; }, 1500);
+}
+
 function closeDebugMenu() {
   document.getElementById('debug-menu').style.display = 'none';
   document.getElementById('title-screen').style.display = 'flex';
