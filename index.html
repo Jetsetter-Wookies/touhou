@@ -588,6 +588,10 @@ let bossTeleportTauntTimer = 0;
 //  INIT
 // ═══════════════════════════════════════════════════════════════
 function initGame() {
+  MusicPlayer.clearPauseState();
+  stopFlandreMusic();
+  _flandrePausedVol = 0.8;
+  paused = false;
   score=0; graze=0; power=1.0;
   lives = babyMode ? 5 : 3; bombs=3; frame=0; stage=1;
   invincible=0; bombActive=0; stageTimer=0; scrollY=0;
@@ -1350,7 +1354,7 @@ function updateItems() {
     if (dist(it.x,it.y,player.x,player.y)<18) {
       if (it.type==='bluediamond') {
         power = 5.0; lv5Unlocked = true; score+=500;
-        playSfx('power5');
+        playSfx('extraLife', 0.35);
         for(let p=0;p<12;p++) spawnParticle(it.x,it.y,'#4488ff',6);
       }
       else if (it.type==='power') { power=Math.min(4,power+0.2); score+=50; }
@@ -2247,7 +2251,17 @@ const MusicPlayer = (() => {
     }, delay);
   }
 
-  return { fadeOut, fadeIn, crossFade, gentleCrossFade, stopAll, pauseMusic, resumeMusic };
+  function clearPauseState() {
+    // Call this when navigating away so a stale paused track can't resume later
+    _pausedVol = 0;
+    if (current && current.paused) {
+      current.pause();
+      current.currentTime = 0;
+      current = null;
+    }
+  }
+
+  return { fadeOut, fadeIn, crossFade, gentleCrossFade, stopAll, pauseMusic, resumeMusic, clearPauseState };
 })();
 
 // ── Music path helpers ──────────────────────────────────────────
@@ -3044,7 +3058,12 @@ function stopFlandreMusic() {
 
 // ── Home button ──────────────────────────────────────────────
 function goHome() {
-  // Keep score as hi-score candidate but return to title
+  // Stop all music/sfx state cleanly before going to title
+  MusicPlayer.clearPauseState();
+  MusicPlayer.stopAll();
+  stopFlandreMusic();
+  _flandrePausedVol = 0.8;
+  paused = false;
   if (score > hiScore) hiScore = score;
   saveHiScore(getModeKey(), score);
   // Reset game state cleanly
