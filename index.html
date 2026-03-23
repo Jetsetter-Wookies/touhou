@@ -368,6 +368,59 @@
 </div>
 
 <script>
+
+// ═══════════════════════════════════════════════════════════════
+//  SFX SYSTEM
+// ═══════════════════════════════════════════════════════════════
+const SFX = {};
+const SFX_FILES = {
+  phantomDeath:    'assets/sfx/pdl_phantomdeath.wav',
+  bossDeath:       'assets/sfx/pdl_bossdeath.wav',
+  enemyHit:        'assets/sfx/pdl_ememyhit.wav',
+  extraLife:       'assets/sfx/pdl_extralife.wav',
+  unpause:         'assets/sfx/pdl_unpause.wav',
+  power5:          'assets/sfx/pdl_5power.wav',
+  bossMove:        'assets/sfx/pdl_bossmove.wav',
+  bossTeleport:    'assets/sfx/pdl_bossteleport.wav',
+  phantomStart:    'assets/sfx/pdl_phantompassstart.wav',
+  pause:           'assets/sfx/pdl_pause.wav',
+  passInvalid:     'assets/sfx/pdl_passinvalid.wav',
+  enemyDie:        'assets/sfx/pdl_ememydie.wav',
+  bossFreeze:      'assets/sfx/pdl_bossfreeze.wav',
+};
+
+// Pre-load all SFX into AudioBuffers via Web Audio API for low-latency playback
+let _sfxCtx = null;
+function getSfxCtx() {
+  if (!_sfxCtx) _sfxCtx = new (window.AudioContext || window.webkitAudioContext)();
+  return _sfxCtx;
+}
+
+function loadSfx() {
+  Object.entries(SFX_FILES).forEach(([key, src]) => {
+    fetch(src)
+      .then(r => r.ok ? r.arrayBuffer() : Promise.reject())
+      .then(buf => getSfxCtx().decodeAudioData(buf))
+      .then(decoded => { SFX[key] = decoded; })
+      .catch(() => {}); // missing file = silent
+  });
+}
+
+function playSfx(key, volume = 1.0) {
+  const buf = SFX[key];
+  if (!buf) return;
+  try {
+    const ctx = getSfxCtx();
+    const src = ctx.createBufferSource();
+    src.buffer = buf;
+    const gain = ctx.createGain();
+    gain.gain.value = volume;
+    src.connect(gain);
+    gain.connect(ctx.destination);
+    src.start(0);
+  } catch(e) {}
+}
+
 // ═══════════════════════════════════════════════════════════════
 //  SPRITE LOADER
 //  All images live in assets/sprites/ next to this HTML file.
@@ -928,7 +981,7 @@ function bossBehavior() {
     boss.fpTimer = (boss.fpTimer||0)+1;
     if (boss.fpPhase===0) {
       boss.x += (20-boss.x)*0.05; boss.y += (80-boss.y)*0.05;
-      if (Math.abs(boss.x-20)<5) { boss.fpPhase=1; boss.fpTimer=0; }
+      if (Math.abs(boss.x-20)<5) { playSfx('bossMove'); boss.fpPhase=1; boss.fpTimer=0; }
     } else if (boss.fpPhase===1) {
       boss.x += (20-boss.x)*0.02; boss.y += (80-boss.y)*0.02;
       if (boss.fpTimer%8===0 && boss.fpTimer<220) {
@@ -987,6 +1040,7 @@ function bossBehavior() {
     }
     // Cirno boast: "I'm the strongest!" tint the screen icy briefly
     if (boss.shootTimer%(300*ti)===0 && !timeFreeze) {
+      playSfx('bossFreeze');
       timeFreeze=true; timeFreezeTimer=90; // shorter freeze
     }
 
@@ -1054,6 +1108,7 @@ function bossBehavior() {
   updateBossHp();
 
   if (boss.hp<=0 && !defeatScreen) {
+    playSfx('bossDeath');
     for (let i=0;i<60;i++) spawnParticle(boss.x+boss.w/2, boss.y+boss.h/2,'#ffdd44',8);
     score += 10000*stage;
     // Drop life orb (not in extra mode)
@@ -1162,8 +1217,10 @@ function updateEnemies() {
         e.hp-=b.dmg;
         bullets.splice(bi,1);
         spawnParticle(b.x,b.y,'#ffcc44',2);
+        if (e.hp>0) playSfx('enemyHit', 0.5);
         if (e.hp<=0) {
           score+=e.score*stage;
+          playSfx('enemyDie');
           for(let p=0;p<10;p++) spawnParticle(e.x+e.w/2,e.y+e.h/2,'#44ffcc',4);
           if (trueMode) {
             const r = Math.random();
@@ -1209,6 +1266,7 @@ function updateBullets() {
       boss.hp-=b.dmg; bullets.splice(i,1); spawnParticle(b.x,b.y,'#ffcc44',2);
       // Teleport dodge for stage 6+ in hard/extra mode
       if (stage >= 6 && trueMode && !bossTeleporting && Math.random() < 0.18) {
+        playSfx('bossTeleport');
         bossTeleporting = true;
         bossTeleportTimer = 40;
         boss.x = 30 + Math.random() * (W - 90);
@@ -1287,12 +1345,14 @@ function updateItems() {
     if (dist(it.x,it.y,player.x,player.y)<18) {
       if (it.type==='bluediamond') {
         power = 5.0; lv5Unlocked = true; score+=500;
+        playSfx('power5');
         for(let p=0;p<12;p++) spawnParticle(it.x,it.y,'#4488ff',6);
       }
       else if (it.type==='power') { power=Math.min(4,power+0.2); score+=50; }
       else if (it.type==='life') {
         const cap = babyMode ? 7 : Infinity;
         if (lives < cap) { lives++; updateUI(); }
+        playSfx('extraLife');
         score+=1000;
       }
       else { score+=500*stage; }
@@ -1899,8 +1959,8 @@ function loop() {
   if (state!=='playing') return;
 
   // ── Pause toggle – checked every frame regardless of paused state ──
-  if (keys['Escape']) { paused=!paused; keys['Escape']=false; }
-  if (paused && (keys['KeyZ'] || keys['KeyX'])) { paused=false; keys['KeyZ']=false; keys['KeyX']=false; }
+  if (keys['Escape']) { paused=!paused; keys['Escape']=false; playSfx(paused ? 'pause' : 'unpause'); }
+  if (paused && (keys['KeyZ'] || keys['KeyX'])) { paused=false; keys['KeyZ']=false; keys['KeyX']=false; playSfx('unpause'); }
 
   if (paused) {
     // Freeze: just redraw the overlay on top of the last rendered frame
@@ -2056,6 +2116,7 @@ loop();   // start render loop (shows "Loading…" screen)
 loadSprites(()=>{
   state='title';
   document.getElementById('title-screen').style.display='flex';
+  loadSfx();
   // Title music starts on first user interaction (browser autoplay policy)
 });
 
@@ -2169,10 +2230,7 @@ function musicOnVictory() {
   MusicPlayer.fadeOut(1500);
 }
 
-// ╔══════════════════════════════════════════════════════════════╗
-// ║  PHANTOM FLANDRE: PASSWORD = D3ATHT0A11G0D5                  ║
-// ╚══════════════════════════════════════════════════════════════╝
-  
+
 // ═══════════════════════════════════════════════════════════════
 //  MUSIC ROOM
 // ═══════════════════════════════════════════════════════════════
@@ -2192,7 +2250,7 @@ const MUSIC_TRACKS = [
   { id:'s6_boss', label:'Stage 6 Boss - Izayoi Sakuya', src:'assets/music/level 6/boss.mp3', locked:false },
   { id:'s7_stage',label:'??? - ???',             src:'assets/music/level 7/stage.mp3', locked:true },
   { id:'s7_boss', label:'??? - ???',             src:'assets/music/level 7/boss.mp3',  locked:true },
-  { id:'flandre',  label:'??? - ???',  src:'assets/music/level 8/boss.mp3',  locked:'flandre' },
+  { id:'flandre',  label:'👻 ??? - Phantom Theme',  src:'assets/music/level 8/boss.mp3',  locked:'flandre' },
 ];
 
 let mrCurrentAudio = null;
@@ -2366,6 +2424,7 @@ function submitPassword() {
 
   const result = decodePassword(code);
   if (!result) {
+    playSfx('passInvalid');
     fb.style.color = '#ff6644';
     fb.textContent = '✗ Invalid code';
     return;
@@ -2443,7 +2502,13 @@ function showStagePassword(nextStage) {
 //  DEBUG MENU
 // ═══════════════════════════════════════════════════════════════
 let debugInfiniteLives = false;
-  
+
+// ╔══════════════════════════════════════════════════════════════╗
+// ║  DEBUG MENU: Enter  D3BUGM0D3  on the title screen.         ║
+// ║  Lets you choose any mode, stage, lives, and power level.   ║
+// ║  The SPECIAL CODE field inside here is the only place       ║
+// ║  the Phantom Flandre code (D3ATHT0A11G0D5) will work.      ║
+// ╚══════════════════════════════════════════════════════════════╝
 function openDebugMenu() {
   document.getElementById('title-screen').style.display = 'none';
   document.getElementById('debug-menu').style.display = 'flex';
@@ -2456,8 +2521,9 @@ function submitDebugPassword() {
   if (!code) { fb.textContent = ''; return; }
 
   if (code === 'D3ATHT0A11G0D5') {
+    playSfx('phantomStart');
     fb.style.color = '#ff2244';
-    fb.textContent = 'PHANTOM DETECTED...';
+    fb.textContent = '👻 PHANTOM DETECTED...';
     input.value = '';
     setTimeout(() => {
       fb.textContent = '';
@@ -2529,11 +2595,14 @@ const _origPlayerHit = playerHit;
 
 
 // ╔══════════════════════════════════════════════════════════════╗
-// ║  DEBUG MENU: Enter  D3BUGM0D3  on the title screen.          ║
-// ║  Lets you choose any mode, stage, lives, and power level .   ║
-// ║  The SPECIAL CODE field inside here is the only place        ║
-// ║  the Phantom Flandre code will work.                         ║
+// ║  PHANTOM FLANDRE: Accessible only from the Debug Menu.      ║
+// ║  Step 1 — Enter  D3BUGM0D3  on the title screen.            ║
+// ║  Step 2 — In the Debug Menu's SPECIAL CODE field enter:     ║
+// ║           D3ATHT0A11G0D5                                    ║
 // ╚══════════════════════════════════════════════════════════════╝
+// ═══════════════════════════════════════════════════════════════
+//  PHANTOM FLANDRE SCARLET  (debug-only boss)
+// ═══════════════════════════════════════════════════════════════
 
 function spawnFlandre() {
   flandreActive = true;
@@ -2554,7 +2623,7 @@ function spawnFlandre() {
     wavesTotal: 0,
     wavesSpawned: 0,
   };
-  showStageBanner('PHANTOM FLANDRE SCARLET');
+  showStageBanner('👻 PHANTOM FLANDRE SCARLET');
   bgPaused = true;
   MusicPlayer.fadeOut(800);
   setTimeout(startFlandreMusic, 900);
@@ -2668,7 +2737,7 @@ function updateFlandre() {
     // Transition to rage phase
     if (flandrePhase===2 && flandre.hp < flandreMaxHp*0.3) {
       flandrePhase = 3;
-      showStageBanner('RAGE MODE');
+      showStageBanner('👻 RAGE MODE');
     }
 
     // Periodic retreat: every ~600 frames (10 sec) retreat, spawn 1-2 waves, return
@@ -2693,6 +2762,7 @@ function updateFlandre() {
     if (flandre.hp <= 0) {
       for(let i=0;i<80;i++) spawnParticle(flandre.x+flandre.w/2, flandre.y+flandre.h/2,'#ff2244',10);
       for(let i=0;i<40;i++) spawnParticle(flandre.x+flandre.w/2, flandre.y+flandre.h/2,'#ffdd44',8);
+      playSfx('phantomDeath');
       score += 99999;
       stopFlandreMusic();
       flandreBeaten = true;
