@@ -1216,10 +1216,10 @@ function updateEnemies() {
         e.hp-=b.dmg;
         bullets.splice(bi,1);
         spawnParticle(b.x,b.y,'#ffcc44',2);
-        if (e.hp>0) playSfx('enemyHit', 0.5);
+        if (e.hp>0) playSfx('enemyHit', 0.3);
         if (e.hp<=0) {
           score+=e.score*stage;
-          playSfx('enemyDie');
+          playSfx('enemyDie', 0.3);
           for(let p=0;p<10;p++) spawnParticle(e.x+e.w/2,e.y+e.h/2,'#44ffcc',4);
           if (trueMode) {
             const r = Math.random();
@@ -1248,6 +1248,7 @@ function updateBullets() {
     if (b.type==='charge5' && flandreActive && flandre) {
       if (dist(b.x,b.y, flandre.x+flandre.w/2, flandre.y+flandre.h/2) < flandre.w/2+10) {
         flandre.hp -= b.dmg;
+      if (!flandre._lastHitSfxFrame || frame - flandre._lastHitSfxFrame >= 6) { playSfx('enemyHit', 0.4); flandre._lastHitSfxFrame = frame; }
         bullets.splice(i,1);
         for(let pp=0;pp<20;pp++) spawnParticle(b.x,b.y,'#ff2222',8);
         flandreTintRed = 90;
@@ -1263,6 +1264,11 @@ function updateBullets() {
     }
     if (bossActive&&boss && dist(b.x,b.y, boss.x+boss.w/2, boss.y+boss.h/2)<boss.w/2) {
       boss.hp-=b.dmg; bullets.splice(i,1); spawnParticle(b.x,b.y,'#ffcc44',2);
+      // Throttle hit sfx: only play every 6 frames to avoid spam
+      if (!boss._lastHitSfxFrame || frame - boss._lastHitSfxFrame >= 6) {
+        playSfx('enemyHit', 0.4);
+        boss._lastHitSfxFrame = frame;
+      }
       // Teleport dodge for stage 6+ in hard/extra mode
       if (stage >= 6 && trueMode && !bossTeleporting && Math.random() < 0.18) {
         playSfx('bossTeleport');
@@ -1958,8 +1964,8 @@ function loop() {
   if (state!=='playing') return;
 
   // ── Pause toggle – checked every frame regardless of paused state ──
-  if (keys['Escape']) { paused=!paused; keys['Escape']=false; playSfx(paused ? 'pause' : 'unpause'); }
-  if (paused && (keys['KeyZ'] || keys['KeyX'])) { paused=false; keys['KeyZ']=false; keys['KeyX']=false; playSfx('unpause'); }
+  if (keys['Escape']) { paused=!paused; keys['Escape']=false; if (paused) { playSfx('pause'); MusicPlayer.pauseMusic(); } else { playSfx('unpause'); MusicPlayer.resumeMusic(400); } }
+  if (paused && (keys['KeyZ'] || keys['KeyX'])) { paused=false; keys['KeyZ']=false; keys['KeyX']=false; playSfx('unpause'); MusicPlayer.resumeMusic(400); }
 
   if (paused) {
     // Freeze: just redraw the overlay on top of the last rendered frame
@@ -2199,7 +2205,48 @@ const MusicPlayer = (() => {
     crossFade(src, loop, 0.7, 1200, 1600);
   }
 
-  return { fadeOut, fadeIn, crossFade, gentleCrossFade, stopAll };
+  let _pausedVol = 0;  // volume to restore on resume
+
+  // Pause: fade out quickly, store position
+  function pauseMusic(dur = 300) {
+    if (!current || current.paused) return;
+    clearFade();
+    const track = current;
+    _pausedVol = track.volume;
+    const steps = 15;
+    const stepTime = dur / steps;
+    const stepAmt = _pausedVol / steps;
+    fadeInterval = setInterval(() => {
+      track.volume = Math.max(0, track.volume - stepAmt);
+      if (track.volume <= 0) {
+        clearFade();
+        track.pause(); // pause at current position — don't reset
+      }
+    }, stepTime);
+  }
+
+  // Resume: resume from where it was, fade back in after delay
+  function resumeMusic(delay = 400, dur = 500) {
+    if (!current) return;
+    const track = current;
+    const target = _pausedVol || 0.75;
+    setTimeout(() => {
+      if (current !== track) return; // track changed while paused
+      track.volume = 0;
+      track.play().catch(() => {});
+      clearFade();
+      const steps = 20;
+      const stepTime = dur / steps;
+      const stepAmt = target / steps;
+      fadeInterval = setInterval(() => {
+        if (current !== track) { clearFade(); return; }
+        track.volume = Math.min(target, track.volume + stepAmt);
+        if (track.volume >= target) clearFade();
+      }, stepTime);
+    }, delay);
+  }
+
+  return { fadeOut, fadeIn, crossFade, gentleCrossFade, stopAll, pauseMusic, resumeMusic };
 })();
 
 // ── Music path helpers ──────────────────────────────────────────
