@@ -549,6 +549,7 @@ let bossQuipTimer = 0;
 let flandreActive    = false;
 let flandreDefeated  = false;  // shows special end instead of normal advance
 let flandreBeaten    = false;  // persists in session – unlocks music room track
+let musicUnlocked    = false;  // set by MU5ICR0CK5 – unlocks all music room tracks
 let flandreHp        = 0;
 let flandreMaxHp     = 8000;
 let flandre          = null;     // boss object
@@ -2320,8 +2321,9 @@ let mrCurrentId    = null;
 
 function isMrTrackUnlocked(track) {
   if (!track.locked) return true;
+  if (musicUnlocked) return true;  // MU5ICR0CK5 unlocks everything
   if (track.locked === 'flandre') return flandreBeaten;
-  return hardCleared; // level 7 tracks unlock after hard mode clear
+  return hardCleared;
 }
 
 function buildMusicRoomList() {
@@ -2467,6 +2469,7 @@ function generatePassword(modeKey, stageNum) {
 
 function decodePassword(code) {
   if (code === 'D3BUGM0D3') return { type:'debug' };
+  if (code === 'MU5ICR0CK5') return { type:'musicunlock' };
   // Try normal and baby for stages 2-7
   for (const modeKey of ['normal','baby']) {
     for (let s = 2; s <= 7; s++) {
@@ -2489,6 +2492,17 @@ function submitPassword() {
     playSfx('passInvalid');
     fb.style.color = '#ff6644';
     fb.textContent = '✗ Invalid code';
+    return;
+  }
+  if (result.type === 'musicunlock') {
+    musicUnlocked = true;
+    hardCleared   = true;  // also unlocks stage 7 tracks
+    flandreBeaten = true;  // also unlocks phantom track
+    input.value = '';
+    playSfx('extraLife', 0.6);
+    fb.style.color = '#44ffcc';
+    fb.textContent = '♪ ALL TRACKS UNLOCKED ♪';
+    setTimeout(() => { fb.textContent = ''; }, 2500);
     return;
   }
   if (result.type === 'debug') {
