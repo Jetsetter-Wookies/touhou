@@ -2352,13 +2352,17 @@ function buildMusicRoomList() {
 }
 
 function playMusicRoomTrack(track) {
-  // Stop any current playback (including Flandre loop player)
+  // Stop any current playback — check for proxy before calling .pause()
   if (mrCurrentAudio) {
-    mrCurrentAudio.pause();
-    mrCurrentAudio.currentTime = 0;
+    if (mrCurrentAudio.isFlandreProxy) {
+      stopFlandreMusic();
+    } else {
+      mrCurrentAudio.pause();
+      mrCurrentAudio.currentTime = 0;
+    }
     mrCurrentAudio = null;
   }
-  // If a Flandre loop was running in the background, stop it
+  // Also stop any lingering Flandre music
   stopFlandreMusic();
 
   mrCurrentId = track.id;
