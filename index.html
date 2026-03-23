@@ -1471,6 +1471,7 @@ function handleInput() {
       bullets.push({ x:player.x, y:player.y-20, dx:0, dy:-spd,
         dmg, type:'charge5', r:rad, chargePct });
       for(let i=0;i<Math.floor(8*chargePct)+3;i++) spawnParticle(player.x, player.y,'#ff2222',6);
+      playSfx('power5', 0.6);  // fire sound
       chargeHeld = 0;
       chargeFired = true;
     } else if (!keys['KeyZ']) {
@@ -1964,8 +1965,8 @@ function loop() {
   if (state!=='playing') return;
 
   // ── Pause toggle – checked every frame regardless of paused state ──
-  if (keys['Escape']) { paused=!paused; keys['Escape']=false; if (paused) { playSfx('pause'); MusicPlayer.pauseMusic(); } else { playSfx('unpause'); MusicPlayer.resumeMusic(400); } }
-  if (paused && (keys['KeyZ'] || keys['KeyX'])) { paused=false; keys['KeyZ']=false; keys['KeyX']=false; playSfx('unpause'); MusicPlayer.resumeMusic(400); }
+  if (keys['Escape']) { paused=!paused; keys['Escape']=false; if (paused) { playSfx('pause'); MusicPlayer.pauseMusic(); pauseFlandreMusic(); } else { playSfx('unpause'); MusicPlayer.resumeMusic(400); resumeFlandreMusic(400); } }
+  if (paused && (keys['KeyZ'] || keys['KeyX'])) { paused=false; keys['KeyZ']=false; keys['KeyX']=false; playSfx('unpause'); MusicPlayer.resumeMusic(400); resumeFlandreMusic(400); }
 
   if (paused) {
     // Freeze: just redraw the overlay on top of the last rendered frame
@@ -2917,6 +2918,7 @@ const FLANDRE_CROSSFADE  = 2.0;   // seconds of crossfade overlap
 
 let _flandreAudio   = null;
 let _flandreLoopChk = null;
+let _flandrePausedVol = 0.8;
 
 function startFlandreMusic() {
   stopFlandreMusic();
@@ -2992,13 +2994,40 @@ function _doFlandreLoop(oldAudio) {
   }, 100);
 }
 
+function pauseFlandreMusic(dur = 300) {
+  if (!_flandreAudio || _flandreAudio.paused) return;
+  const audio = _flandreAudio;
+  _flandrePausedVol = audio.volume;
+  const steps = 15, stepTime = dur / steps, stepAmt = _flandrePausedVol / steps;
+  const fo = setInterval(()=>{
+    audio.volume = Math.max(0, audio.volume - stepAmt);
+    if (audio.volume <= 0) { clearInterval(fo); audio.pause(); }
+  }, stepTime);
+}
+
+function resumeFlandreMusic(delay = 400, dur = 500) {
+  if (!_flandreAudio) return;
+  const audio = _flandreAudio;
+  const target = _flandrePausedVol || 0.8;
+  setTimeout(()=>{
+    if (_flandreAudio !== audio) return;
+    audio.volume = 0;
+    audio.play().catch(()=>{});
+    const steps = 20, stepTime = dur / steps, stepAmt = target / steps;
+    const fi = setInterval(()=>{
+      if (_flandreAudio !== audio) { clearInterval(fi); return; }
+      audio.volume = Math.min(target, audio.volume + stepAmt);
+      if (audio.volume >= target) clearInterval(fi);
+    }, stepTime);
+  }, delay);
+}
+
 function stopFlandreMusic() {
   clearInterval(_flandreLoopChk);
   _flandreLoopChk = null;
   if (_flandreAudio) {
     const a = _flandreAudio;
     _flandreAudio = null;
-    // Fade out then stop
     let vol = a.volume;
     const fo = setInterval(()=>{
       vol = Math.max(0, vol - 0.8/20);
